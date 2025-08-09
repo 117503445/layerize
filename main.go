@@ -72,4 +72,13 @@ func main() {
 			log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
 		}
 	}
+	
+	// 获取镜像配置信息
+	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
+	if err != nil {
+		log.Error().Err(err).Msg("获取config失败")
+	} else {
+		log.Info().Int("configSize", len(config)).Msg("获取config成功")
+		log.Debug().RawJSON("config", config).Msg("config内容")
+	}
 }

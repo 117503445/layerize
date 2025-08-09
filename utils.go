@@ -690,3 +690,134 @@ func getManifestWithToken(client *http.Client, manifestURL, token string) ([]byt
 
 	return body, contentType, nil
 }
+
+// GetConfigWithAuth 从镜像仓库获取镜像配置信息
+// registryURL: 镜像仓库URL (例如: "https://registry.cn-hangzhou.aliyuncs.com")
+// repository: 镜像仓库中的repository名称 (例如: "117503445/layerize-test-base")
+// reference: 镜像标签 (例如: "latest")
+// username: 认证用户名
+// password: 认证密码
+func GetConfigWithAuth(registryURL, repository, reference, username, password string) ([]byte, error) {
+	// 首先获取manifest
+	manifestData, _, err := GetManifestWithAuth(registryURL, repository, reference, username, password)
+	if err != nil {
+		return nil, fmt.Errorf("获取manifest失败: %w", err)
+	}
+
+	// 解析manifest获取config digest
+	var manifest OCIManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return nil, fmt.Errorf("解析manifest失败: %w", err)
+	}
+
+	configDigest := manifest.Config.Digest
+
+	// 构造获取config的URL
+	configURL := fmt.Sprintf("%s/v2/%s/blobs/%s", registryURL, repository, configDigest)
+
+	log.Info().Str("url", configURL).Msg("开始获取config")
+
+	// 创建请求
+	req, err := http.NewRequest("GET", configURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建获取config请求失败")
+		return nil, fmt.Errorf("创建获取config请求失败: %w", err)
+	}
+
+	// 添加认证信息（如果提供了用户名和密码）
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	// 设置Accept头部
+	req.Header.Set("Accept", "application/vnd.docker.container.image.v1+json, application/vnd.oci.image.config.v1+json")
+
+	// 发起GET请求获取config
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起获取config请求失败")
+		return nil, fmt.Errorf("发起获取config请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode == http.StatusUnauthorized {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Info().Str("WWW-Authenticate", wwwAuth).Msg("收到认证挑战")
+
+			// 解析WWW-Authenticate头部获取token
+			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
+			if err != nil {
+				log.Warn().Err(err).Msg("获取token失败")
+				return nil, fmt.Errorf("获取token失败: %w", err)
+			}
+
+			// 使用token重新发起请求
+			return getConfigWithToken(client, configURL, token)
+		}
+		log.Error().Int("status", resp.StatusCode).Msg("未提供认证信息")
+		return nil, fmt.Errorf("认证失败: %d", resp.StatusCode)
+	} else if resp.StatusCode != http.StatusOK {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("获取config返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("获取config返回错误状态码")
+		}
+		return nil, fmt.Errorf("获取config返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应内容
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("读取config内容失败")
+		return nil, fmt.Errorf("读取config内容失败: %w", err)
+	}
+
+	log.Info().Str("digest", configDigest).Int("size", len(body)).Msg("获取config成功")
+
+	return body, nil
+}
+
+// 使用token获取config
+func getConfigWithToken(client *http.Client, configURL, token string) ([]byte, error) {
+	// 创建请求
+	req, err := http.NewRequest("GET", configURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建获取config请求失败")
+		return nil, fmt.Errorf("创建获取config请求失败: %w", err)
+	}
+
+	// 设置Authorization头部
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	// 设置Accept头部
+	req.Header.Set("Accept", "application/vnd.docker.container.image.v1+json, application/vnd.oci.image.config.v1+json")
+
+	// 发起GET请求获取config
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起获取config请求失败")
+		return nil, fmt.Errorf("发起获取config请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		log.Error().Int("status", resp.StatusCode).Msg("获取config返回错误状态码")
+		return nil, fmt.Errorf("获取config返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应内容
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("读取config内容失败")
+		return nil, fmt.Errorf("读取config内容失败: %w", err)
+	}
+
+	log.Info().Int("size", len(body)).Msg("获取config成功")
+
+	return body, nil
+}

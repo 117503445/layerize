@@ -124,22 +124,47 @@ func updateOCIManifest(original []byte, digest string, size int64, mediaType str
 // config: the original OCI image config as byte slice
 // diffID: the diffID of the new layer to be added
 func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
-	var imageConfig struct {
-		RootFS struct {
-			Type    string   `json:"type"`
-			DiffIDs []string `json:"diff_ids"`
-		} `json:"rootfs"`
-		// Include other fields as raw json to preserve them
-		RawJSON map[string]interface{} `json:"-"`
-	}
+	// 使用map[string]interface{}来解析JSON，这样可以保留所有字段
+	var imageConfig map[string]interface{}
 
-	// Unmarshal the config into our struct
+	// Unmarshal the config into our map
 	if err := json.Unmarshal(config, &imageConfig); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
 	}
 
-	// Add the new diffID to the rootfs
-	imageConfig.RootFS.DiffIDs = append(imageConfig.RootFS.DiffIDs, diffID)
+	// 获取或创建rootfs字段
+	rootfs, exists := imageConfig["rootfs"]
+	if !exists {
+		// 如果rootfs不存在，创建一个新的
+		rootfs = map[string]interface{}{
+			"type":    "layers",
+			"diff_ids": []interface{}{},
+		}
+		imageConfig["rootfs"] = rootfs
+	}
+
+	// 将rootfs转换为map[string]interface{}
+	rootfsMap, ok := rootfs.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("rootfs field is not a JSON object")
+	}
+
+	// 获取或创建diff_ids字段
+	diffIDs, exists := rootfsMap["diff_ids"]
+	if !exists {
+		// 如果diff_ids不存在，创建一个新的数组
+		rootfsMap["diff_ids"] = []interface{}{}
+		diffIDs = rootfsMap["diff_ids"]
+	}
+
+	// 将diff_ids转换为[]interface{}
+	diffIDsArray, ok := diffIDs.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("diff_ids field is not a JSON array")
+	}
+
+	// 添加新的diffID到diff_ids数组
+	rootfsMap["diff_ids"] = append(diffIDsArray, diffID)
 
 	// Re-marshal the config
 	updatedConfig, err := json.Marshal(imageConfig)

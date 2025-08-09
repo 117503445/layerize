@@ -80,5 +80,14 @@ func main() {
 	} else {
 		log.Info().Int("configSize", len(config)).Msg("获取config成功")
 		log.Debug().RawJSON("config", config).Msg("config内容")
+		
+		// 调用 UpdateOCIConfig 更新config
+		updatedConfig, err := UpdateOCIConfig(config, "sha256:"+sha256sum)
+		if err != nil {
+			log.Error().Err(err).Msg("更新config失败")
+		} else {
+			log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
+			log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
+		}
 	}
 }

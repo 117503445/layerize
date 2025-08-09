@@ -41,7 +41,7 @@ func main() {
 	// 上传 layer 到阿里云镜像仓库
 	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
 	if err != nil {
-		panic(err)
+		log.Panic().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
 	}
 
 	log.Info().Msg("文件上传完成")

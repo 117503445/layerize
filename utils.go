@@ -152,14 +152,14 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 		wwwAuth := resp.Header.Get("WWW-Authenticate")
 		if wwwAuth != "" {
 			log.Info().Str("WWW-Authenticate", wwwAuth).Msg("收到认证挑战")
-			
+
 			// 解析WWW-Authenticate头部获取token
 			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
 			if err != nil {
 				log.Error().Err(err).Msg("获取token失败")
 				return fmt.Errorf("获取token失败: %w", err)
 			}
-			
+
 			// 使用token重新发起上传请求
 			return uploadLayerWithToken(client, reader, sha256sum, registryURL, repository, token)
 		}
@@ -183,11 +183,11 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	// 解析WWW-Authenticate头部，例如:
 	// Bearer realm="https://cr.console.aliyun.com/v1/token",service="registry.cn-hangzhou.aliyuncs.com",scope="repository:117503445/layerize-test-base:push,pull"
-	
+
 	if !strings.HasPrefix(wwwAuth, "Bearer ") {
 		return "", fmt.Errorf("不支持的认证类型: %s", wwwAuth)
 	}
-	
+
 	// 提取realm, service, scope参数
 	var realm, service, scope string
 	parts := strings.Split(wwwAuth[7:], ",")
@@ -207,30 +207,30 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 			}
 		}
 	}
-	
+
 	log.Info().
 		Str("realm", realm).
 		Str("service", service).
 		Str("scope", scope).
 		Msg("解析认证参数")
-	
+
 	// 构造token请求URL
 	tokenURL := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
-	
+
 	log.Info().Str("url", tokenURL).Msg("正在获取Bearer Token")
-	
+
 	// 创建请求
 	req, err := http.NewRequest("GET", tokenURL, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("创建获取token请求失败")
 		return "", fmt.Errorf("创建获取token请求失败: %w", err)
 	}
-	
+
 	// 添加Basic认证信息（使用阿里云的AccessKey ID和AccessKey Secret）
 	if username != "" && password != "" {
 		req.SetBasicAuth(username, password)
 	}
-	
+
 	// 发送请求
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -239,20 +239,20 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 		return "", fmt.Errorf("发送获取token请求失败: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Int("status", resp.StatusCode).Msg("获取token返回错误状态码")
 		return "", fmt.Errorf("获取token返回错误状态码: %d", resp.StatusCode)
 	}
-	
+
 	// 读取响应内容
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Error().Err(err).Msg("读取响应内容失败")
 		return "", fmt.Errorf("读取响应内容失败: %w", err)
 	}
-	
+
 	// 解析JSON响应提取token
 	var tokenResponse struct {
 		Token       string `json:"token"`
@@ -260,49 +260,57 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 		IssuedAt    string `json:"issued_at"`
 	}
-	
+
 	if err := json.Unmarshal(body, &tokenResponse); err != nil {
 		log.Error().Err(err).Str("body", string(body)).Msg("解析token响应失败")
 		return "", fmt.Errorf("解析token响应失败: %w", err)
 	}
-	
+
 	token := tokenResponse.Token
 	if token == "" {
 		token = tokenResponse.AccessToken
 	}
-	
+
 	if token == "" {
 		log.Error().Str("body", string(body)).Msg("响应中未找到token")
 		return "", fmt.Errorf("响应中未找到token")
 	}
-	
+
 	log.Info().Str("token", token).Msg("获取Bearer Token成功")
-	
+
 	return token, nil
 }
 
 // 使用token继续上传流程
 func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, token string) error {
+	log.Info().
+		Str("sha256", sha256sum).
+		Str("registry", registryURL).
+		Str("repository", repository).
+		Str("token", token).
+		Msg("开始上传layer")
+
 	// 重新发起上传请求
 	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	
+	log.Debug().Str("url", uploadURL).Msg("正在发起上传请求")
+
 	req, err := http.NewRequest("POST", uploadURL, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("创建上传请求失败")
 		return fmt.Errorf("创建上传请求失败: %w", err)
 	}
-	
+
 	// 添加Bearer Token认证
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/octet-stream")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Error().Err(err).Msg("发起上传请求失败")
 		return fmt.Errorf("发起上传请求失败: %w", err)
 	}
 	resp.Body.Close()
-	
+
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusAccepted {
 		wwwAuth := resp.Header.Get("WWW-Authenticate")
@@ -313,7 +321,7 @@ func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, regi
 		}
 		return fmt.Errorf("上传请求返回错误状态码: %d", resp.StatusCode)
 	}
-	
+
 	// 继续上传流程
 	return continueUpload(client, reader, sha256sum, registryURL, repository, resp.Header.Get("Location"))
 }
@@ -384,7 +392,7 @@ func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryUR
 func GetDockerHubToken(username, password, repository, scope string) (string, error) {
 	// 构造获取token的URL
 	url := fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:%s", repository, scope)
-	
+
 	log.Info().Str("url", url).Msg("正在获取Docker Hub token")
 
 	// 创建请求
@@ -422,7 +430,7 @@ func GetDockerHubToken(username, password, repository, scope string) (string, er
 	}
 
 	log.Info().Str("response", string(body)).Msg("获取token成功")
-	
+
 	// 这里应该解析JSON响应并提取token
 	// 简单起见，我们直接返回响应体
 	// 实际使用时应该解析JSON并提取token字段

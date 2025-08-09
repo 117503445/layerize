@@ -45,4 +45,14 @@ func main() {
 	}
 
 	log.Info().Msg("文件上传完成")
+	
+	// 获取镜像manifest示例
+	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
+	if err != nil {
+		log.Error().Err(err).Msg("获取manifest失败")
+	} else {
+		log.Info().Str("contentType", contentType).Int("manifestSize", len(manifest)).Msg("获取manifest成功")
+		// 如果需要查看manifest内容，可以取消下面的注释
+		log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
+	}
 }

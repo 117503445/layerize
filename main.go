@@ -55,6 +55,32 @@ func main() {
 
 	log.Info().Msg("文件上传完成")
 	
+	// 获取镜像配置信息
+	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
+	if err != nil {
+		log.Error().Err(err).Msg("获取config失败")
+	} else {
+		log.Info().Int("configSize", len(config)).Msg("获取config成功")
+		log.Debug().RawJSON("config", config).Msg("config内容")
+		
+		// 调用 UpdateOCIConfig 更新config
+		updatedConfig, err := UpdateOCIConfig(config, "sha256:"+sha256sum)
+		if err != nil {
+			log.Error().Err(err).Msg("更新config失败")
+		} else {
+			log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
+			log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
+			
+			// 上传更新后的配置
+			err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
+			if err != nil {
+				log.Error().Err(err).Msg("上传更新后的config失败")
+			} else {
+				log.Info().Msg("上传更新后的config成功")
+			}
+		}
+	}
+	
 	// 获取镜像manifest示例
 	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
 	if err != nil {
@@ -79,32 +105,6 @@ func main() {
 				log.Error().Err(err).Msg("上传更新后的manifest失败")
 			} else {
 				log.Info().Msg("上传更新后的manifest成功")
-			}
-		}
-	}
-	
-	// 获取镜像配置信息
-	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
-	if err != nil {
-		log.Error().Err(err).Msg("获取config失败")
-	} else {
-		log.Info().Int("configSize", len(config)).Msg("获取config成功")
-		log.Debug().RawJSON("config", config).Msg("config内容")
-		
-		// 调用 UpdateOCIConfig 更新config
-		updatedConfig, err := UpdateOCIConfig(config, "sha256:"+sha256sum)
-		if err != nil {
-			log.Error().Err(err).Msg("更新config失败")
-		} else {
-			log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
-			log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
-			
-			// 上传更新后的配置
-			err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
-			if err != nil {
-				log.Error().Err(err).Msg("上传更新后的config失败")
-			} else {
-				log.Info().Msg("上传更新后的config成功")
 			}
 		}
 	}

@@ -208,15 +208,20 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 			}
 		}
 	}
+	// repo := parts[1]
+	// desiredScope := fmt.Sprintf("%s:pull,push", repo)
+	// scope = "push"
+	desiredScope := "repository:117503445/layerize-test-base:pull,push"
 
 	log.Info().
 		Str("realm", realm).
 		Str("service", service).
 		Str("scope", scope).
+		Str("desiredScope", desiredScope).
 		Msg("解析认证参数")
 
 	// 构造token请求URL
-	tokenURL := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
+	tokenURL := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, desiredScope)
 
 	log.Info().Str("url", tokenURL).Msg("正在获取Bearer Token")
 
@@ -243,7 +248,14 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusOK {
-		log.Error().Int("status", resp.StatusCode).Msg("获取token返回错误状态码")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Error().Err(err).Msg("读取响应内容失败")
+		}
+
+		log.Error().Int("status", resp.StatusCode).
+			Interface("body", string(body)).
+			Msg("获取token返回错误状态码")
 		return "", fmt.Errorf("获取token返回错误状态码: %d", resp.StatusCode)
 	}
 
@@ -304,6 +316,8 @@ func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, regi
 	// 添加Bearer Token认证
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/octet-stream")
+
+	log.Debug().Interface("req.Header", req.Header).Send()
 
 	resp, err := client.Do(req)
 	if err != nil {

@@ -552,3 +552,141 @@ func continueUploadWithBasicAuth(client *http.Client, reader io.Reader, sha256su
 	return nil
 
 }
+
+// GetManifest 获取镜像的manifest
+// registryURL: 镜像仓库URL (例如: "http://localhost:5000")
+// repository: 镜像仓库中的repository名称 (例如: "myapp")
+// reference: 镜像tag或digest (例如: "latest" 或 "sha256:...")
+func GetManifest(registryURL, repository, reference string) ([]byte, string, error) {
+	return GetManifestWithAuth(registryURL, repository, reference, "", "")
+}
+
+// GetManifestWithAuth 获取镜像的manifest（带认证）
+// registryURL: 镜像仓库URL (例如: "http://localhost:5000")
+// repository: 镜像仓库中的repository名称 (例如: "myapp")
+// reference: 镜像tag或digest (例如: "latest" 或 "sha256:...")
+// username: 认证用户名
+// password: 认证密码
+func GetManifestWithAuth(registryURL, repository, reference, username, password string) ([]byte, string, error) {
+	// 构造获取manifest的URL
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repository, reference)
+
+	log.Info().Str("url", manifestURL).Msg("开始获取manifest")
+
+	// 创建请求
+	req, err := http.NewRequest("GET", manifestURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建获取manifest请求失败")
+		return nil, "", fmt.Errorf("创建获取manifest请求失败: %w", err)
+	}
+
+	// 设置Accept头部，支持多种media type
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json")
+
+	// 添加认证信息（如果提供了用户名和密码）
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	// 发起GET请求获取manifest
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起获取manifest请求失败")
+		return nil, "", fmt.Errorf("发起获取manifest请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode == http.StatusUnauthorized {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Info().Str("WWW-Authenticate", wwwAuth).Msg("收到认证挑战")
+
+			// 解析WWW-Authenticate头部获取token
+			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
+			if err != nil {
+				log.Warn().Err(err).Msg("获取token失败")
+				return nil, "", fmt.Errorf("获取token失败: %w", err)
+			}
+
+			// 使用token重新发起请求
+			return getManifestWithToken(client, manifestURL, token)
+		}
+		log.Error().Int("status", resp.StatusCode).Msg("未提供认证信息")
+		return nil, "", fmt.Errorf("认证失败: %d", resp.StatusCode)
+	} else if resp.StatusCode != http.StatusOK {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("获取manifest返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("获取manifest返回错误状态码")
+		}
+		return nil, "", fmt.Errorf("获取manifest返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应内容
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("读取manifest内容失败")
+		return nil, "", fmt.Errorf("读取manifest内容失败: %w", err)
+	}
+
+	// 获取Content-Type头部
+	contentType := resp.Header.Get("Content-Type")
+
+	log.Info().Str("contentType", contentType).Msg("获取manifest成功")
+
+	return body, contentType, nil
+}
+
+// 使用token获取manifest
+func getManifestWithToken(client *http.Client, manifestURL, token string) ([]byte, string, error) {
+	log.Info().Str("url", manifestURL).Msg("使用token获取manifest")
+
+	// 创建请求
+	req, err := http.NewRequest("GET", manifestURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建获取manifest请求失败")
+		return nil, "", fmt.Errorf("创建获取manifest请求失败: %w", err)
+	}
+
+	// 设置Accept头部，支持多种media type
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json")
+
+	// 添加Bearer Token认证
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	// 发起GET请求获取manifest
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起获取manifest请求失败")
+		return nil, "", fmt.Errorf("发起获取manifest请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("获取manifest返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("获取manifest返回错误状态码")
+		}
+		return nil, "", fmt.Errorf("获取manifest返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应内容
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("读取manifest内容失败")
+		return nil, "", fmt.Errorf("读取manifest内容失败: %w", err)
+	}
+
+	// 获取Content-Type头部
+	contentType := resp.Header.Get("Content-Type")
+
+	log.Info().Str("contentType", contentType).Msg("获取manifest成功")
+
+	return body, contentType, nil
+}

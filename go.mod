@@ -1,11 +1,11 @@
-module layerbuild
+module github.com/117503445/layerize
 
-go 1.24.5
+go 1.24
 
 require (
 	github.com/117503445/goutils v0.0.0-20250524165930-376be95001a8
 	github.com/joho/godotenv v1.5.1
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.10.0
 )
 

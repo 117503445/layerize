@@ -255,18 +255,23 @@ func (c *Client) UploadLayer(ctx context.Context, repository, digest string, lay
 	// 第一步：发起上传请求
 	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/v2/%s/blobs/uploads/", repository), nil, scope)
 	if err != nil {
+		log.Error().Err(err).Msg("发起上传请求失败")
 		return fmt.Errorf("发起上传请求失败: %w", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("发起上传请求失败，状态码: %d", resp.StatusCode)
+		err := fmt.Errorf("发起上传请求失败，状态码: %d", resp.StatusCode)
+		log.Error().Err(err).Int("status_code", resp.StatusCode).Msg("发起上传请求失败")
+		return err
 	}
 
 	// 获取上传 URL
 	location := resp.Header.Get("Location")
 	if location == "" {
-		return fmt.Errorf("响应中未包含 Location 头部")
+		err := fmt.Errorf("响应中未包含 Location 头部")
+		log.Error().Err(err).Msg("响应中未包含 Location 头部")
+		return err
 	}
 
 	// 如果 location 是相对路径，拼接完整 URL
@@ -283,12 +288,14 @@ func (c *Client) UploadLayer(ctx context.Context, repository, digest string, lay
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT", putURL, layerData)
 	if err != nil {
+		log.Error().Err(err).Msg("创建 PUT 请求失败")
 		return fmt.Errorf("创建 PUT 请求失败: %w", err)
 	}
 
 	// 添加认证头部
 	authHeader, err := c.getAuthorizationHeader(ctx, scope)
 	if err != nil {
+		log.Error().Err(err).Msg("获取认证信息失败")
 		return fmt.Errorf("获取认证信息失败: %w", err)
 	}
 
@@ -299,12 +306,15 @@ func (c *Client) UploadLayer(ctx context.Context, repository, digest string, lay
 
 	putResp, err := c.client.Do(putReq)
 	if err != nil {
+		log.Error().Err(err).Msg("上传数据失败")
 		return fmt.Errorf("上传数据失败: %w", err)
 	}
 	defer putResp.Body.Close()
 
 	if putResp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("上传数据失败，状态码: %d", putResp.StatusCode)
+		err := fmt.Errorf("上传数据失败，状态码: %d", putResp.StatusCode)
+		log.Error().Err(err).Int("status_code", putResp.StatusCode).Msg("上传数据失败")
+		return err
 	}
 
 	log.Info().Str("digest", digest).Msg("Layer 上传成功")
@@ -391,13 +401,6 @@ func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte
 	}
 
 	return io.ReadAll(resp.Body)
-}
-
-// CalculateSHA256 计算数据的 SHA256 哈希值
-func CalculateSHA256(data []byte) string {
-	hasher := sha256.New()
-	hasher.Write(data)
-	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
 
 // CalculateReaderSHA256 计算 reader 数据的 SHA256 哈希值

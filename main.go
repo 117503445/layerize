@@ -54,5 +54,14 @@ func main() {
 		log.Info().Str("contentType", contentType).Int("manifestSize", len(manifest)).Msg("获取manifest成功")
 		// 如果需要查看manifest内容，可以取消下面的注释
 		log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
+		
+		// 调用 updateOCIManifest 更新manifest
+		updatedManifest, err := updateOCIManifest(manifest, "sha256:"+sha256sum, int64(12345), "")
+		if err != nil {
+			log.Error().Err(err).Msg("更新manifest失败")
+		} else {
+			log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
+			log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
+		}
 	}
 }

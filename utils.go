@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,22 @@ func getContentLength(reader io.Reader) int64 {
 	return 0
 }
 
+// CalculateSHA256 计算给定数据的 SHA256 哈希值
+func CalculateSHA256(reader io.Reader) (string, error) {
+	// 创建一个新的 SHA256 hasher
+	hasher := sha256.New()
+
+	// 将数据复制到 hasher
+	if _, err := io.Copy(hasher, reader); err != nil {
+		log.Error().Err(err).Msg("读取数据时出错")
+		return "", fmt.Errorf("读取数据时出错: %w", err)
+	}
+
+	// 计算哈希值并返回十六进制表示
+	hashBytes := hasher.Sum(nil)
+	return fmt.Sprintf("%x", hashBytes), nil
+}
+
 // CalculateFileSHA256 计算指定文件的 SHA256 哈希值
 func CalculateFileSHA256(filePath string) (string, error) {
 	// 打开文件
@@ -95,6 +112,22 @@ func CalculateFileSHA256(filePath string) (string, error) {
 	if _, err := io.Copy(hasher, file); err != nil {
 		log.Error().Err(err).Str("path", filePath).Msg("读取文件时出错")
 		return "", fmt.Errorf("读取文件 %s 时出错: %w", filePath, err)
+	}
+
+	// 计算哈希值并返回十六进制表示
+	hashBytes := hasher.Sum(nil)
+	return fmt.Sprintf("%x", hashBytes), nil
+}
+
+// CalculateDataSHA256 计算数据的 SHA256 哈希值
+func CalculateDataSHA256(data []byte) (string, error) {
+	// 创建一个新的 SHA256 hasher
+	hasher := sha256.New()
+
+	// 将数据复制到 hasher
+	if _, err := io.Copy(hasher, bytes.NewReader(data)); err != nil {
+		log.Error().Err(err).Msg("计算数据SHA256时出错")
+		return "", fmt.Errorf("计算数据SHA256时出错: %w", err)
 	}
 
 	// 计算哈希值并返回十六进制表示
@@ -820,4 +853,294 @@ func getConfigWithToken(client *http.Client, configURL, token string) ([]byte, e
 	log.Info().Int("size", len(body)).Msg("获取config成功")
 
 	return body, nil
+}
+
+// UploadConfigToRegistryWithAuth 上传更新后的镜像配置到镜像仓库
+// configData: 更新后的配置数据
+// configDigest: 配置的SHA256摘要 (格式: "sha256:...")
+// registryURL: 镜像仓库URL (例如: "https://registry.cn-hangzhou.aliyuncs.com")
+// repository: 镜像仓库中的repository名称 (例如: "117503445/layerize-test-base")
+// username: 认证用户名
+// password: 认证密码
+func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL, repository, username, password string) error {
+	// 第一步：发起上传请求
+	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
+
+	log.Info().Str("url", uploadURL).Msg("开始上传config")
+
+	// 创建请求
+	req, err := http.NewRequest("POST", uploadURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建上传config请求失败")
+		return fmt.Errorf("创建上传config请求失败: %w", err)
+	}
+
+	// 添加认证信息（如果提供了用户名和密码）
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	// 发起POST请求启动上传过程
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起上传config请求失败")
+		return fmt.Errorf("发起上传config请求失败: %w", err)
+	}
+	resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode == http.StatusUnauthorized {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Info().Str("WWW-Authenticate", wwwAuth).Msg("收到认证挑战")
+
+			// 解析WWW-Authenticate头部获取token
+			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
+			if err != nil {
+				log.Warn().Err(err).Msg("获取token失败，尝试使用基础认证")
+				// 如果获取token失败，尝试使用基础认证重新上传
+				return uploadConfigWithBasicAuth(client, configData, configDigest, registryURL, repository, username, password)
+			}
+
+			// 使用token重新发起上传请求
+			return uploadConfigWithToken(client, configData, configDigest, registryURL, repository, token)
+		}
+		log.Error().Int("status", resp.StatusCode).Msg("未提供认证信息")
+		return fmt.Errorf("认证失败: %d", resp.StatusCode)
+	} else if resp.StatusCode != http.StatusAccepted {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传config请求返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传config请求返回错误状态码")
+		}
+		return fmt.Errorf("上传config请求返回错误状态码: %d", resp.StatusCode)
+	} else {
+		// 继续上传流程
+		return continueConfigUploadWithBasicAuth(client, configData, configDigest, registryURL, repository, resp.Header.Get("Location"), username, password)
+	}
+}
+
+// 使用基础认证继续上传配置流程
+func uploadConfigWithBasicAuth(client *http.Client, configData []byte, configDigest, registryURL, repository, username, password string) error {
+	log.Info().
+		Str("digest", configDigest).
+		Str("registry", registryURL).
+		Str("repository", repository).
+		Msg("开始使用基础认证上传config")
+
+	// 发起上传请求
+	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
+	log.Debug().Str("url", uploadURL).Msg("正在发起上传config请求")
+
+	req, err := http.NewRequest("POST", uploadURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建上传config请求失败")
+		return fmt.Errorf("创建上传config请求失败: %w", err)
+	}
+
+	// 添加基础认证信息
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起上传config请求失败")
+		return fmt.Errorf("发起上传config请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusAccepted {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传config请求返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传config请求返回错误状态码")
+		}
+		return fmt.Errorf("上传config请求返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 继续上传流程
+	return continueConfigUploadWithBasicAuth(client, configData, configDigest, registryURL, repository, resp.Header.Get("Location"), username, password)
+}
+
+// 使用token上传配置
+func uploadConfigWithToken(client *http.Client, configData []byte, configDigest, registryURL, repository, token string) error {
+	log.Info().
+		Str("digest", configDigest).
+		Str("registry", registryURL).
+		Str("repository", repository).
+		Str("token", token).
+		Msg("开始上传config")
+
+	// 重新发起上传请求
+	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
+	log.Debug().Str("url", uploadURL).Msg("正在发起上传config请求")
+
+	req, err := http.NewRequest("POST", uploadURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建上传config请求失败")
+		return fmt.Errorf("创建上传config请求失败: %w", err)
+	}
+
+	// 添加Bearer Token认证
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	log.Debug().Interface("req.Header", req.Header).Send()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起上传config请求失败")
+		return fmt.Errorf("发起上传config请求失败: %w", err)
+	}
+	resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusAccepted {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传config请求返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传config请求返回错误状态码")
+		}
+		return fmt.Errorf("上传config请求返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 继续上传流程
+	return continueConfigUploadWithToken(client, configData, configDigest, registryURL, repository, resp.Header.Get("Location"), token)
+}
+
+// 继续上传配置流程（带基础认证）
+func continueConfigUploadWithBasicAuth(client *http.Client, configData []byte, configDigest, registryURL, repository, location, username, password string) error {
+	// 获取上传URL
+	if location == "" {
+		log.Error().Msg("响应中未包含Location头部")
+		return fmt.Errorf("响应中未包含Location头部")
+	}
+
+	// 如果location是相对路径，则需要拼接完整URL
+	if strings.HasPrefix(location, "/") {
+		location = registryURL + location
+	}
+
+	log.Info().Str("location", location).Msg("获得上传config地址")
+
+	// 第二步：上传数据
+	// 使用PUT方法上传数据，并在URL中指定digest
+	separator := "?"
+	if strings.Contains(location, "?") {
+		separator = "&"
+	}
+	
+	// 确保digest格式正确
+	digest := configDigest
+	if strings.HasPrefix(digest, "sha256:") {
+		digest = digest[7:] // 移除 "sha256:" 前缀
+	}
+	
+	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, digest)
+
+	putReq, err := http.NewRequest("PUT", putURL, bytes.NewReader(configData))
+	if err != nil {
+		log.Error().Err(err).Msg("创建PUT请求失败")
+		return fmt.Errorf("创建PUT请求失败: %w", err)
+	}
+
+	// 添加基础认证信息
+	if username != "" && password != "" {
+		putReq.SetBasicAuth(username, password)
+	}
+
+	putReq.Header.Set("Content-Type", "application/octet-stream")
+	putReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(configData)))
+
+	resp, err := client.Do(putReq)
+	if err != nil {
+		log.Error().Err(err).Msg("上传config数据失败")
+		return fmt.Errorf("上传config数据失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传config数据返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传config数据返回错误状态码")
+		}
+		return fmt.Errorf("上传config数据返回错误状态码: %d", resp.StatusCode)
+	}
+
+	log.Info().Str("digest", configDigest).Msg("config上传成功")
+	return nil
+}
+
+// 继续上传配置流程（带token认证）
+func continueConfigUploadWithToken(client *http.Client, configData []byte, configDigest, registryURL, repository, location, token string) error {
+	// 获取上传URL
+	if location == "" {
+		log.Error().Msg("响应中未包含Location头部")
+		return fmt.Errorf("响应中未包含Location头部")
+	}
+
+	// 如果location是相对路径，则需要拼接完整URL
+	if strings.HasPrefix(location, "/") {
+		location = registryURL + location
+	}
+
+	log.Info().Str("location", location).Msg("获得上传config地址")
+
+	// 第二步：上传数据
+	// 使用PUT方法上传数据，并在URL中指定digest
+	separator := "?"
+	if strings.Contains(location, "?") {
+		separator = "&"
+	}
+	
+	// 确保digest格式正确
+	digest := configDigest
+	if strings.HasPrefix(digest, "sha256:") {
+		digest = digest[7:] // 移除 "sha256:" 前缀
+	}
+	
+	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, digest)
+
+	putReq, err := http.NewRequest("PUT", putURL, bytes.NewReader(configData))
+	if err != nil {
+		log.Error().Err(err).Msg("创建PUT请求失败")
+		return fmt.Errorf("创建PUT请求失败: %w", err)
+	}
+
+	// 添加Bearer Token认证
+	putReq.Header.Set("Authorization", "Bearer "+token)
+	putReq.Header.Set("Content-Type", "application/octet-stream")
+	putReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(configData)))
+
+	resp, err := client.Do(putReq)
+	if err != nil {
+		log.Error().Err(err).Msg("上传config数据失败")
+		return fmt.Errorf("上传config数据失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传config数据返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传config数据返回错误状态码")
+		}
+		return fmt.Errorf("上传config数据返回错误状态码: %d", resp.StatusCode)
+	}
+
+	log.Info().Str("digest", configDigest).Msg("config上传成功")
+	return nil
 }

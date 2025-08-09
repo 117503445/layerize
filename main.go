@@ -18,14 +18,22 @@ func main() {
 		panic(err)
 	}
 
+	// 获取 diff.tar.gz 文件信息
+	fileInfo, err := os.Stat("./tmp/diff.tar.gz")
+	if err != nil {
+		log.Error().Err(err).Msg("获取文件信息失败")
+		panic(err)
+	}
+	fileSize := fileInfo.Size()
+
 	// 示例：计算 diff.tar.gz 的 SHA256
 	sha256sum, err := CalculateFileSHA256("./tmp/diff.tar.gz")
 	if err != nil {
 		panic(err)
 	}
 
-	// 打印SHA256值
-	log.Info().Str("sha256", sha256sum).Msg("文件SHA256计算完成")
+	// 打印SHA256值和文件大小
+	log.Info().Str("sha256", sha256sum).Int64("fileSize", fileSize).Msg("文件SHA256计算完成")
 
 	// 打开文件用于上传
 	file, err := os.Open("./tmp/diff.tar.gz")
@@ -56,7 +64,7 @@ func main() {
 		log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
 		
 		// 调用 updateOCIManifest 更新manifest
-		updatedManifest, err := updateOCIManifest(manifest, "sha256:"+sha256sum, int64(12345), "")
+		updatedManifest, err := updateOCIManifest(manifest, "sha256:"+sha256sum, fileSize, "")
 		if err != nil {
 			log.Error().Err(err).Msg("更新manifest失败")
 		} else {

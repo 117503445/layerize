@@ -103,6 +103,11 @@ func main() {
 			err = client.UploadManifest(context.Background(), "117503445/layerize-test-base", "latest", updatedManifest, contentType)
 			if err != nil {
 				log.Error().Err(err).Msg("上传更新后的manifest失败")
+				// 记录更多调试信息
+				log.Debug().
+					Str("contentType", contentType).
+					Int("manifestSize", len(updatedManifest)).
+					Msg("尝试上传的manifest信息")
 			} else {
 				log.Info().Msg("上传更新后的manifest成功")
 			}

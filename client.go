@@ -93,13 +93,20 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 	log.Info().Str("scope", scope).Msg("获取新的认证 token")
 
-	// 构造 token 请求 URL
-	tokenURL := fmt.Sprintf("%s/v2/token?service=%s&scope=%s",
-		c.registryURL,
-		strings.TrimPrefix(c.registryURL, "https://"),
-		scope)
+	// 首先尝试通过HTTP HEAD请求获取正确的认证URL
+	authURL, err := c.getAuthURL(ctx, scope)
+	if err != nil {
+		log.Debug().Err(err).Msg("无法通过HEAD请求获取认证URL，使用默认URL")
+		// 如果无法获取，使用默认URL
+		authURL = fmt.Sprintf("%s/v2/token?service=%s&scope=%s",
+			c.registryURL,
+			strings.TrimPrefix(c.registryURL, "https://"),
+			scope)
+	}
+	
+	log.Debug().Str("auth_url", authURL).Msg("使用认证URL")
 
-	req, err := http.NewRequestWithContext(ctx, "GET", tokenURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("创建 token 请求失败: %w", err)
 	}
@@ -248,6 +255,80 @@ func parseScopeFromWWWAuth(wwwAuth string) (string, error) {
 	return scope, nil
 }
 
+// getAuthURL 从 registry 获取认证 URL
+func (c *Client) getAuthURL(ctx context.Context, scope string) (string, error) {
+	// 发送一个HEAD请求到registry以获取WWW-Authenticate头部
+	headReq, err := http.NewRequestWithContext(ctx, "HEAD", fmt.Sprintf("%s/v2/", c.registryURL), nil)
+	if err != nil {
+		return "", err
+	}
+
+	// 添加基本认证信息
+	if c.username != "" && c.password != "" {
+		headReq.SetBasicAuth(c.username, c.password)
+	}
+
+	resp, err := c.client.Do(headReq)
+	if err != nil {
+		return "", err
+	}
+	resp.Body.Close()
+
+	// 检查是否返回401，并获取WWW-Authenticate头部
+	if resp.StatusCode == http.StatusUnauthorized {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			// 解析WWW-Authenticate头部
+			if strings.HasPrefix(wwwAuth, "Bearer ") {
+				// 提取realm、service和scope参数
+				var realm, service string
+				parts := strings.Split(wwwAuth[7:], ",")
+				for _, part := range parts {
+					kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+					if len(kv) == 2 {
+						key := kv[0]
+						value := strings.Trim(kv[1], "\"")
+						switch key {
+						case "realm":
+							realm = value
+						case "service":
+							service = value
+						}
+					}
+				}
+
+				// 构造正确的认证URL
+				if realm == "" {
+					return "", fmt.Errorf("realm 参数为空")
+				}
+
+				// 构造token URL并验证
+				tokenURL := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
+				
+				// 确保URL格式正确
+				if strings.Contains(realm, "?") {
+					// 如果realm已经包含查询参数，使用&拼接
+					tokenURL = fmt.Sprintf("%s&service=%s&scope=%s", realm, service, scope)
+				} else {
+					// 否则使用?开始新的查询参数
+					tokenURL = fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
+				}
+
+				log.Debug().
+					Str("realm", realm).
+					Str("service", service).
+					Str("scope", scope).
+					Str("token_url", tokenURL).
+					Msg("成功解析认证URL")
+				
+				return tokenURL, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("无法从registry获取认证URL")
+}
+
 // UploadLayer 上传 layer 到 registry
 func (c *Client) UploadLayer(ctx context.Context, repository, digest string, layerData io.Reader) error {
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
@@ -379,6 +460,14 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 
 	if putResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(putResp.Body)
+		log.Error().
+			Int("status_code", putResp.StatusCode).
+			Str("status", putResp.Status).
+			Str("response_body", string(body)).
+			Str("content_type", contentType).
+			Str("repository", repository).
+			Str("reference", reference).
+			Msg("上传 manifest 失败详细信息")
 		return fmt.Errorf("上传 manifest 失败，状态码: %d, 响应: %s", putResp.StatusCode, string(body))
 	}
 

@@ -105,7 +105,8 @@ func updateOCIManifest(original []byte, digest string, size int64, mediaType str
 
 	// Set default mediaType if not provided
 	if mediaType == "" {
-		mediaType = MediaTypeOCILayer
+		// mediaType = MediaTypeOCILayer
+		mediaType = MediaTypeDockerLayer
 	}
 
 	// Append new layer

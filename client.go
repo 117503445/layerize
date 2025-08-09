@@ -103,7 +103,7 @@ func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 			strings.TrimPrefix(c.registryURL, "https://"),
 			scope)
 	}
-	
+
 	log.Debug().Str("auth_url", authURL).Msg("使用认证URL")
 
 	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
@@ -304,7 +304,7 @@ func (c *Client) getAuthURL(ctx context.Context, scope string) (string, error) {
 
 				// 构造token URL并验证
 				tokenURL := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
-				
+
 				// 确保URL格式正确
 				if strings.Contains(realm, "?") {
 					// 如果realm已经包含查询参数，使用&拼接
@@ -320,7 +320,7 @@ func (c *Client) getAuthURL(ctx context.Context, scope string) (string, error) {
 					Str("scope", scope).
 					Str("token_url", tokenURL).
 					Msg("成功解析认证URL")
-				
+
 				return tokenURL, nil
 			}
 		}
@@ -427,6 +427,12 @@ func (c *Client) GetManifest(ctx context.Context, repository, reference string) 
 
 // UploadManifest 上传 manifest 到 registry
 func (c *Client) UploadManifest(ctx context.Context, repository, reference string, manifest []byte, contentType string) error {
+	log.Info().
+		Str("repository", repository).
+		Str("reference", reference).
+		RawJSON("manifest", manifest).
+		Msg("UploadManifest")
+
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 
 	putURL := fmt.Sprintf("/v2/%s/manifests/%s", repository, reference)
@@ -471,7 +477,10 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 		return fmt.Errorf("上传 manifest 失败，状态码: %d, 响应: %s", putResp.StatusCode, string(body))
 	}
 
-	log.Info().Str("repository", repository).Str("reference", reference).Msg("Manifest 上传成功")
+	log.Info().
+		Str("repository", repository).
+		Str("reference", reference).
+		Msg("Manifest 上传成功")
 	return nil
 }
 

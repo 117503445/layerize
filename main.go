@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/117503445/goutils"
@@ -70,6 +71,15 @@ func main() {
 		} else {
 			log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
 			log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
+			
+			// 上传更新后的manifest
+			client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", username, password)
+			err = client.UploadManifest(context.Background(), "117503445/layerize-test-base", "latest", updatedManifest, contentType)
+			if err != nil {
+				log.Error().Err(err).Msg("上传更新后的manifest失败")
+			} else {
+				log.Info().Msg("上传更新后的manifest成功")
+			}
 		}
 	}
 	

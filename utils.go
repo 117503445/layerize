@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/distribution/reference"
+	"github.com/opencontainers/go-digest"
 	"github.com/rs/zerolog/log"
 )
 
@@ -118,8 +120,22 @@ func UploadLayerToRegistry(reader io.Reader, sha256sum, registryURL, repository 
 // username: 认证用户名
 // password: 认证密码
 func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
+	log.Info().
+		Str("sha256", sha256sum).
+		Str("registry", registryURL).
+		Str("repository", repository).
+		Str("username", username).
+		Msg("UploadLayerToRegistryWithAuth")
+
+	// 解析仓库引用
+	ref, err := reference.WithName(repository)
+	if err != nil {
+		log.Error().Err(err).Str("repository", repository).Msg("无效的仓库名称")
+		return fmt.Errorf("无效的仓库名称 %s: %w", repository, err)
+	}
+
 	// 第一步：发起上传请求
-	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
+	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, reference.Path(ref))
 
 	log.Info().Str("url", uploadURL).Msg("开始上传layer")
 
@@ -172,7 +188,10 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 	if strings.Contains(location, "?") {
 		separator = "&"
 	}
-	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, sha256sum)
+	
+	// 计算layer的digest
+	dig := digest.NewDigestFromHex("sha256", sha256sum)
+	putURL := fmt.Sprintf("%s%sdigest=%s", location, separator, dig.String())
 
 	putReq, err := http.NewRequest("PUT", putURL, reader)
 	if err != nil {

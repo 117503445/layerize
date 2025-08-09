@@ -131,9 +131,9 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 	}
 
 	// 添加认证信息
-	if username != "" && password != "" {
-		req.SetBasicAuth(username, password)
-	}
+	// if username != "" && password != "" {
+	// 	req.SetBasicAuth(username, password)
+	// }
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 
@@ -186,9 +186,9 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 	}
 
 	// 添加认证信息
-	if username != "" && password != "" {
-		putReq.SetBasicAuth(username, password)
-	}
+	// if username != "" && password != "" {
+	// 	putReq.SetBasicAuth(username, password)
+	// }
 
 	putReq.Header.Set("Content-Type", "application/octet-stream")
 

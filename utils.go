@@ -211,7 +211,7 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	// repo := parts[1]
 	// desiredScope := fmt.Sprintf("%s:pull,push", repo)
 	// scope = "push"
-	desiredScope := "repository:117503445/layerize-test-base:pull,push"
+	desiredScope := "repository:117503445/layerize-test-base:pull,push" // TODO
 
 	log.Info().
 		Str("realm", realm).

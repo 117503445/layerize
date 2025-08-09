@@ -131,10 +131,10 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 		return fmt.Errorf("创建上传请求失败: %w", err)
 	}
 
-	// 添加认证信息
-	// if username != "" && password != "" {
-	// 	req.SetBasicAuth(username, password)
-	// }
+	// 添加认证信息（如果提供了用户名和密码）
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
 
 	req.Header.Set("Content-Type", "application/octet-stream")
 
@@ -156,8 +156,9 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 			// 解析WWW-Authenticate头部获取token
 			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
 			if err != nil {
-				log.Error().Err(err).Msg("获取token失败")
-				return fmt.Errorf("获取token失败: %w", err)
+				log.Warn().Err(err).Msg("获取token失败，尝试使用基础认证")
+				// 如果获取token失败，尝试使用基础认证重新上传
+				return uploadLayerWithBasicAuth(client, reader, sha256sum, registryURL, repository, username, password)
 			}
 
 			// 使用token重新发起上传请求
@@ -323,11 +324,11 @@ func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, regi
 	}
 
 	// 继续上传流程
-	return continueUpload(client, reader, sha256sum, registryURL, repository, resp.Header.Get("Location"))
+	return continueUploadWithToken(client, reader, sha256sum, registryURL, repository, resp.Header.Get("Location"), token)
 }
 
-// 继续上传流程
-func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string) error {
+// 使用token继续上传流程
+func continueUploadWithToken(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string, token string) error {
 	// 获取上传URL
 	if location == "" {
 		log.Error().Msg("响应中未包含Location头部")
@@ -355,11 +356,8 @@ func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryUR
 		return fmt.Errorf("创建PUT请求失败: %w", err)
 	}
 
-	// 添加认证信息
-	// if username != "" && password != "" {
-	// 	putReq.SetBasicAuth(username, password)
-	// }
-
+	// 添加Bearer Token认证
+	putReq.Header.Set("Authorization", "Bearer "+token)
 	putReq.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := client.Do(putReq)
@@ -381,7 +379,6 @@ func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryUR
 
 	log.Info().Str("sha256", sha256sum).Msg("layer上传成功")
 	return nil
-
 }
 
 // GetDockerHubToken 从Docker Hub获取token
@@ -435,4 +432,162 @@ func GetDockerHubToken(username, password, repository, scope string) (string, er
 	// 简单起见，我们直接返回响应体
 	// 实际使用时应该解析JSON并提取token字段
 	return string(body), nil
+}
+
+// 使用基础认证继续上传流程
+func uploadLayerWithBasicAuth(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
+	log.Info().
+		Str("sha256", sha256sum).
+		Str("registry", registryURL).
+		Str("repository", repository).
+		Msg("开始使用基础认证上传layer")
+
+	// 发起上传请求
+	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
+	log.Debug().Str("url", uploadURL).Msg("正在发起上传请求")
+
+	req, err := http.NewRequest("POST", uploadURL, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建上传请求失败")
+		return fmt.Errorf("创建上传请求失败: %w", err)
+	}
+
+	// 添加基础认证信息
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
+	
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发起上传请求失败")
+		return fmt.Errorf("发起上传请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusAccepted {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传请求返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传请求返回错误状态码")
+		}
+		return fmt.Errorf("上传请求返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 继续上传流程
+	return continueUploadWithBasicAuth(client, reader, sha256sum, registryURL, repository, resp.Header.Get("Location"), username, password)
+}
+
+// 继续上传流程
+func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string) error {
+	// 获取上传URL
+	if location == "" {
+		log.Error().Msg("响应中未包含Location头部")
+		return fmt.Errorf("响应中未包含Location头部")
+	}
+
+	// 如果location是相对路径，则需要拼接完整URL
+	if strings.HasPrefix(location, "/") {
+		location = registryURL + location
+	}
+
+	log.Info().Str("location", location).Msg("获得上传地址")
+
+	// 第二步：上传数据
+	// 使用PUT方法上传数据，并在URL中指定digest
+	separator := "?"
+	if strings.Contains(location, "?") {
+		separator = "&"
+	}
+	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, sha256sum)
+
+	putReq, err := http.NewRequest("PUT", putURL, reader)
+	if err != nil {
+		log.Error().Err(err).Msg("创建PUT请求失败")
+		return fmt.Errorf("创建PUT请求失败: %w", err)
+	}
+
+	putReq.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := client.Do(putReq)
+	if err != nil {
+		log.Error().Err(err).Msg("上传数据失败")
+		return fmt.Errorf("上传数据失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传数据返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传数据返回错误状态码")
+		}
+		return fmt.Errorf("上传数据返回错误状态码: %d", resp.StatusCode)
+	}
+
+	log.Info().Str("sha256", sha256sum).Msg("layer上传成功")
+	return nil
+
+}
+
+// 继续上传流程（带基础认证）
+func continueUploadWithBasicAuth(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location, username, password string) error {
+	// 获取上传URL
+	if location == "" {
+		log.Error().Msg("响应中未包含Location头部")
+		return fmt.Errorf("响应中未包含Location头部")
+	}
+
+	// 如果location是相对路径，则需要拼接完整URL
+	if strings.HasPrefix(location, "/") {
+		location = registryURL + location
+	}
+
+	log.Info().Str("location", location).Msg("获得上传地址")
+
+	// 第二步：上传数据
+	// 使用PUT方法上传数据，并在URL中指定digest
+	separator := "?"
+	if strings.Contains(location, "?") {
+		separator = "&"
+	}
+	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, sha256sum)
+
+	putReq, err := http.NewRequest("PUT", putURL, reader)
+	if err != nil {
+		log.Error().Err(err).Msg("创建PUT请求失败")
+		return fmt.Errorf("创建PUT请求失败: %w", err)
+	}
+
+	// 添加基础认证信息
+	if username != "" && password != "" {
+		putReq.SetBasicAuth(username, password)
+	}
+
+	putReq.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := client.Do(putReq)
+	if err != nil {
+		log.Error().Err(err).Msg("上传数据失败")
+		return fmt.Errorf("上传数据失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传数据返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传数据返回错误状态码")
+		}
+		return fmt.Errorf("上传数据返回错误状态码: %d", resp.StatusCode)
+	}
+
+	log.Info().Str("sha256", sha256sum).Msg("layer上传成功")
+	return nil
+
 }

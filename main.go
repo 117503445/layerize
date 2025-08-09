@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"os"
 
 	"github.com/117503445/goutils"
@@ -45,80 +48,90 @@ func main() {
 	// 从环境变量读取认证信息
 	username := os.Getenv("username")
 	password := os.Getenv("password")
+	registryURL := "https://registry.cn-hangzhou.aliyuncs.com"
+	repository := "117503445/layerize-test-base"
+
+	// 创建 registry 客户端
+	client := NewClient(registryURL, username, password)
 
 	// 上传 layer 到阿里云镜像仓库
-	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
+	digest := "sha256:" + sha256sum
+	err = client.UploadLayer(context.Background(), repository, digest, file)
 	if err != nil {
-		log.Panic().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
+		log.Panic().Err(err).Msg("UploadLayer failed")
 	}
 
 	log.Info().Msg("文件上传完成")
-	
+
 	// 获取镜像manifest示例
-	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
+	manifest, contentType, err := client.GetManifest(context.Background(), repository, "latest")
 	if err != nil {
 		log.Error().Err(err).Msg("获取manifest失败")
 	} else {
 		log.Info().Str("contentType", contentType).Int("manifestSize", len(manifest)).Msg("获取manifest成功")
 		// 如果需要查看manifest内容，可以取消下面的注释
 		log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
-		
+
 		// 调用 updateOCIManifest 更新manifest
-		updatedManifest, err := updateOCIManifest(manifest, "sha256:"+sha256sum, fileSize, "")
+		updatedManifest, err := updateOCIManifest(manifest, digest, fileSize, "")
 		if err != nil {
 			log.Error().Err(err).Msg("更新manifest失败")
 		} else {
 			log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
 			log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
-		}
-	}
-	
-	// 获取镜像配置信息
-	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
-	if err != nil {
-		log.Error().Err(err).Msg("获取config失败")
-	} else {
-		log.Info().Int("configSize", len(config)).Msg("获取config成功")
-		log.Debug().RawJSON("config", config).Msg("config内容")
-		
-		// 调用 UpdateOCIConfig 更新config
-		updatedConfig, err := UpdateOCIConfig(config, "sha256:"+sha256sum)
-		if err != nil {
-			log.Error().Err(err).Msg("更新config失败")
-		} else {
-			log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
-			log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
-			
-			// 上传更新后的配置
-			err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
+
+			// 上传更新后的 manifest
+			err = client.UploadManifest(context.Background(), repository, "latest", updatedManifest, contentType)
 			if err != nil {
-				log.Error().Err(err).Msg("上传更新后的config失败")
+				log.Error().Err(err).Msg("上传更新后的manifest失败")
 			} else {
-				log.Info().Msg("上传更新后的config成功")
+				log.Info().Msg("上传更新后的manifest成功")
+			}
+		}
+		
+		// 从 manifest 中提取配置摘要
+		var manifestData struct {
+			Config struct {
+				Digest string `json:"digest"`
+			} `json:"config"`
+		}
+		
+		if err := json.Unmarshal(manifest, &manifestData); err != nil {
+			log.Error().Err(err).Msg("解析manifest失败")
+		} else {
+			configDigest := manifestData.Config.Digest
+			
+			// 获取镜像配置信息
+			config, err := client.GetBlob(context.Background(), repository, configDigest)
+			if err != nil {
+				log.Error().Err(err).Msg("获取config失败")
+			} else {
+				log.Info().Int("configSize", len(config)).Msg("获取config成功")
+				log.Debug().RawJSON("config", config).Msg("config内容")
+
+				// 调用 UpdateOCIConfig 更新config
+				updatedConfig, err := UpdateOCIConfig(config, digest)
+				if err != nil {
+					log.Error().Err(err).Msg("更新config失败")
+				} else {
+					log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
+					log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
+
+					// 计算更新后配置的SHA256摘要
+					configSHA256 := CalculateSHA256(updatedConfig)
+					newConfigDigest := "sha256:" + configSHA256
+
+					log.Info().Str("digest", newConfigDigest).Msg("计算配置摘要完成")
+
+					// 上传更新后的配置
+					err = client.UploadLayer(context.Background(), repository, newConfigDigest, bytes.NewReader(updatedConfig))
+					if err != nil {
+						log.Error().Err(err).Msg("上传更新后的config失败")
+					} else {
+						log.Info().Msg("上传更新后的config成功")
+					}
+				}
 			}
 		}
 	}
-}
-
-// UploadUpdatedConfigToRegistry 上传更新后的配置到镜像仓库
-func UploadUpdatedConfigToRegistry(updatedConfig []byte, registryURL, repository, username, password string) error {
-	// 计算更新后配置的SHA256摘要
-	configSHA256, err := CalculateDataSHA256(updatedConfig)
-	if err != nil {
-		log.Error().Err(err).Msg("计算配置SHA256失败")
-		return err
-	}
-	
-	configDigest := "sha256:" + configSHA256
-	
-	log.Info().Str("digest", configDigest).Msg("计算配置摘要完成")
-	
-	// 上传更新后的配置
-	err = UploadConfigToRegistryWithAuth(updatedConfig, configDigest, registryURL, repository, username, password)
-	if err != nil {
-		log.Error().Err(err).Msg("上传配置到镜像仓库失败")
-		return err
-	}
-	
-	return nil
 }

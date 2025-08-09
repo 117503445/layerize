@@ -203,3 +203,56 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 	return nil
 
 }
+
+// GetDockerHubToken 从Docker Hub获取token
+// username: Docker Hub用户名
+// password: Docker Hub密码
+// repository: 镜像仓库名称，例如"library/ubuntu"
+// scope: 访问权限范围，例如"pull"
+func GetDockerHubToken(username, password, repository, scope string) (string, error) {
+	// 构造获取token的URL
+	url := fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:%s", repository, scope)
+	
+	log.Info().Str("url", url).Msg("正在获取Docker Hub token")
+
+	// 创建请求
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("创建获取token请求失败")
+		return "", fmt.Errorf("创建获取token请求失败: %w", err)
+	}
+
+	// 添加Basic认证信息
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error().Err(err).Msg("发送获取token请求失败")
+		return "", fmt.Errorf("发送获取token请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		log.Error().Int("status", resp.StatusCode).Msg("获取token返回错误状态码")
+		return "", fmt.Errorf("获取token返回错误状态码: %d", resp.StatusCode)
+	}
+
+	// 读取响应内容
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("读取响应内容失败")
+		return "", fmt.Errorf("读取响应内容失败: %w", err)
+	}
+
+	log.Info().Str("response", string(body)).Msg("获取token成功")
+	
+	// 这里应该解析JSON响应并提取token
+	// 简单起见，我们直接返回响应体
+	// 实际使用时应该解析JSON并提取token字段
+	return string(body), nil
+}

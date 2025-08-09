@@ -148,7 +148,12 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 
 	// 检查响应状态码
 	if resp.StatusCode != http.StatusAccepted {
-		log.Error().Int("status", resp.StatusCode).Msg("上传请求返回错误状态码")
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传请求返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传请求返回错误状态码")
+		}
 		return fmt.Errorf("上传请求返回错误状态码: %d", resp.StatusCode)
 	}
 
@@ -195,7 +200,12 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		log.Error().Int("status", resp.StatusCode).Msg("上传数据返回错误状态码")
+		wwwAuth := resp.Header.Get("WWW-Authenticate")
+		if wwwAuth != "" {
+			log.Error().Int("status", resp.StatusCode).Str("WWW-Authenticate", wwwAuth).Msg("上传数据返回错误状态码")
+		} else {
+			log.Error().Int("status", resp.StatusCode).Msg("上传数据返回错误状态码")
+		}
 		return fmt.Errorf("上传数据返回错误状态码: %d", resp.StatusCode)
 	}
 

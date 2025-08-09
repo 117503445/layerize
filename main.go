@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 
 	"github.com/117503445/goutils"
@@ -55,6 +56,9 @@ func main() {
 
 	log.Info().Msg("文件上传完成")
 
+	// 声明 updatedConfig 变量
+	var updatedConfig []byte
+
 	// 获取镜像配置信息
 	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
 	if err != nil {
@@ -64,7 +68,7 @@ func main() {
 		log.Debug().RawJSON("config", config).Msg("config内容")
 
 		// 调用 UpdateOCIConfig 更新config
-		updatedConfig, err := UpdateOCIConfig(config, "sha256:"+sha256sum)
+		updatedConfig, err = UpdateOCIConfig(config, "sha256:"+sha256sum)
 		if err != nil {
 			log.Error().Err(err).Msg("更新config失败")
 		} else {
@@ -80,6 +84,12 @@ func main() {
 			}
 		}
 	}
+	
+	// 只有在config更新成功时才继续处理manifest
+	if updatedConfig == nil {
+		log.Error().Msg("配置未更新成功，跳过manifest处理")
+		return
+	}
 
 	// 获取镜像manifest示例
 	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
@@ -90,8 +100,36 @@ func main() {
 		// 如果需要查看manifest内容，可以取消下面的注释
 		log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
 
+		// 计算更新后配置的SHA256摘要
+		configSHA256, err := CalculateDataSHA256(updatedConfig)
+		if err != nil {
+			log.Error().Err(err).Msg("计算配置SHA256失败")
+			return
+		}
+		configDigest := "sha256:" + configSHA256
+
+		// 更新 manifest 中的配置引用
+		var manifestData map[string]interface{}
+		if err := json.Unmarshal(manifest, &manifestData); err != nil {
+			log.Error().Err(err).Msg("解析manifest失败")
+			return
+		}
+
+		if config, ok := manifestData["config"].(map[string]interface{}); ok {
+			config["digest"] = configDigest
+			// 重新计算配置大小
+			config["size"] = len(updatedConfig)
+		}
+
+		// 重新序列化 manifest
+		updatedManifestWithNewConfig, err := json.Marshal(manifestData)
+		if err != nil {
+			log.Error().Err(err).Msg("序列化更新后的manifest失败")
+			return
+		}
+
 		// 调用 updateOCIManifest 更新manifest
-		updatedManifest, err := updateOCIManifest(manifest, "sha256:"+sha256sum, fileSize, "")
+		updatedManifest, err := updateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
 		if err != nil {
 			log.Error().Err(err).Msg("更新manifest失败")
 		} else {

@@ -119,3 +119,33 @@ func updateOCIManifest(original []byte, digest string, size int64, mediaType str
 	// Re-encode
 	return json.MarshalIndent(manifest, "", "  ")
 }
+
+// UpdateOCIConfig updates an OCI image config with a new layer diffID
+// config: the original OCI image config as byte slice
+// diffID: the diffID of the new layer to be added
+func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
+	var imageConfig struct {
+		RootFS struct {
+			Type    string   `json:"type"`
+			DiffIDs []string `json:"diff_ids"`
+		} `json:"rootfs"`
+		// Include other fields as raw json to preserve them
+		RawJSON map[string]interface{} `json:"-"`
+	}
+
+	// Unmarshal the config into our struct
+	if err := json.Unmarshal(config, &imageConfig); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
+	}
+
+	// Add the new diffID to the rootfs
+	imageConfig.RootFS.DiffIDs = append(imageConfig.RootFS.DiffIDs, diffID)
+
+	// Re-marshal the config
+	updatedConfig, err := json.Marshal(imageConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal updated image config: %w", err)
+	}
+
+	return updatedConfig, nil
+}

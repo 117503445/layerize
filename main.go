@@ -21,7 +21,7 @@ func main() {
 	}
 
 	// 获取 diff.tar.gz 文件信息
-	fileInfo, err := os.Stat("./tmp/diff.tar.gz")
+	fileInfo, err := os.Stat("./tmp/diff.tar")
 	if err != nil {
 		log.Error().Err(err).Msg("获取文件信息失败")
 		panic(err)

@@ -34,6 +34,12 @@ func main() {
 		panic(err)
 	}
 
+	// 计算 diff.tar 的 SHA256 用作 diffID
+	diffSha256sum, err := CalculateFileSHA256("./tmp/diff.tar")
+	if err != nil {
+		panic(err)
+	}
+
 	// 打印SHA256值和文件大小
 	log.Info().Str("sha256", sha256sum).Int64("fileSize", fileSize).Msg("文件SHA256计算完成")
 
@@ -67,8 +73,8 @@ func main() {
 		log.Info().Int("configSize", len(config)).Msg("获取config成功")
 		log.Debug().RawJSON("config", config).Msg("config内容")
 
-		// 调用 UpdateOCIConfig 更新config
-		updatedConfig, err = UpdateOCIConfig(config, "sha256:"+sha256sum)
+		// 调用 UpdateOCIConfig 更新config，使用 diff.tar 的 sha256 作为 diffID
+		updatedConfig, err = UpdateOCIConfig(config, "sha256:"+diffSha256sum)
 		if err != nil {
 			log.Error().Err(err).Msg("更新config失败")
 		} else {

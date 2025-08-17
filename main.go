@@ -3,12 +3,183 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 
 	"github.com/117503445/goutils"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 )
+
+// BuildImage 封装了构建镜像的完整流程
+// 参数:
+// - baseImageName: 基础镜像名称，例如 "117503445/layerize-test-base"
+// - baseImageAuth: 基础镜像认证信息，包含用户名和密码
+// - diffTarReader: diff.tar文件的reader
+// - targetImage: 目标镜像名称
+// - targetAuth: 目标镜像认证信息，包含用户名和密码
+func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reader, targetImage string, targetAuth Auth) error {
+	goutils.InitZeroLog()
+
+	// 获取 diff.tar 的内容
+	diffTarData, err := io.ReadAll(diffTarReader)
+	if err != nil {
+		log.Error().Err(err).Msg("读取diffTarReader失败")
+		return err
+	}
+
+	// 计算 diff.tar 的 SHA256 用作 diffID
+	diffSha256sum, err := CalculateDataSHA256(diffTarData)
+	if err != nil {
+		log.Error().Err(err).Msg("计算diff.tar SHA256失败")
+		return err
+	}
+
+	// 创建临时文件用于上传
+	tmpFile, err := os.CreateTemp("", "diff.tar.gz")
+	if err != nil {
+		log.Error().Err(err).Msg("创建临时文件失败")
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	// 压缩 diff.tar 为 diff.tar.gz
+	if err := compressToTarGz("./tmp", tmpFile.Name()); err != nil {
+		log.Error().Err(err).Msg("压缩文件失败")
+		return err
+	}
+
+	// 获取压缩文件信息
+	fileInfo, err := tmpFile.Stat()
+	if err != nil {
+		log.Error().Err(err).Msg("获取临时文件信息失败")
+		return err
+	}
+	fileSize := fileInfo.Size()
+
+	// 重新打开文件用于上传
+	file, err := os.Open(tmpFile.Name())
+	if err != nil {
+		log.Error().Err(err).Msg("重新打开临时文件失败")
+		return err
+	}
+	defer file.Close()
+
+	// 计算压缩文件的SHA256
+	sha256sum, err := CalculateFileSHA256(tmpFile.Name())
+	if err != nil {
+		log.Error().Err(err).Msg("计算压缩文件SHA256失败")
+		return err
+	}
+
+	// 上传 layer 到目标镜像仓库
+	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", targetImage, targetAuth.Username, targetAuth.Password)
+	if err != nil {
+		log.Error().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
+		return err
+	}
+
+	log.Info().Msg("文件上传完成")
+
+	// 声明 updatedConfig 变量
+	var updatedConfig []byte
+
+	// 获取基础镜像配置信息
+	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", baseImageName, "latest", baseImageAuth.Username, baseImageAuth.Password)
+	if err != nil {
+		log.Error().Err(err).Msg("获取config失败")
+		return err
+	}
+
+	log.Info().Int("configSize", len(config)).Msg("获取config成功")
+	log.Debug().RawJSON("config", config).Msg("config内容")
+
+	// 调用 UpdateOCIConfig 更新config，使用 diff.tar 的 sha256 作为 diffID
+	updatedConfig, err = UpdateOCIConfig(config, "sha256:"+diffSha256sum)
+	if err != nil {
+		log.Error().Err(err).Msg("更新config失败")
+		return err
+	}
+
+	log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
+	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
+
+	// 上传更新后的配置
+	err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", targetImage, targetAuth.Username, targetAuth.Password)
+	if err != nil {
+		log.Error().Err(err).Msg("上传更新后的config失败")
+		return err
+	}
+
+	log.Info().Msg("上传更新后的config成功")
+
+	// 获取基础镜像manifest示例
+	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", baseImageName, "latest", baseImageAuth.Username, baseImageAuth.Password)
+	if err != nil {
+		log.Error().Err(err).Msg("获取manifest失败")
+		return err
+	}
+
+	log.Info().Str("contentType", contentType).Int("manifestSize", len(manifest)).Msg("获取manifest成功")
+	// 如果需要查看manifest内容，可以取消下面的注释
+	log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
+
+	// 计算更新后配置的SHA256摘要
+	configSHA256, err := CalculateDataSHA256(updatedConfig)
+	if err != nil {
+		log.Error().Err(err).Msg("计算配置SHA256失败")
+		return err
+	}
+	configDigest := "sha256:" + configSHA256
+
+	// 更新 manifest 中的配置引用
+	var manifestData map[string]any
+	if err := json.Unmarshal(manifest, &manifestData); err != nil {
+		log.Error().Err(err).Msg("解析manifest失败")
+		return err
+	}
+
+	if config, ok := manifestData["config"].(map[string]any); ok {
+		config["digest"] = configDigest
+		// 重新计算配置大小
+		config["size"] = len(updatedConfig)
+	}
+
+	// 重新序列化 manifest
+	updatedManifestWithNewConfig, err := json.Marshal(manifestData)
+	if err != nil {
+		log.Error().Err(err).Msg("序列化更新后的manifest失败")
+		return err
+	}
+
+	// 调用 updateOCIManifest 更新manifest
+	updatedManifest, err := updateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
+	if err != nil {
+		log.Error().Err(err).Msg("更新manifest失败")
+		return err
+	}
+
+	log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
+	log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
+
+	// 上传更新后的manifest到目标仓库
+	client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", targetAuth.Username, targetAuth.Password)
+	err = client.UploadManifest(context.Background(), targetImage, "latest", updatedManifest, contentType)
+	if err != nil {
+		log.Error().Err(err).Msg("上传更新后的manifest失败")
+		return err
+	}
+
+	log.Info().Msg("上传更新后的manifest成功")
+	return nil
+}
+
+// Auth 用于存储认证信息
+type Auth struct {
+	Username string
+	Password string
+}
 
 func main() {
 	goutils.InitZeroLog()
@@ -20,151 +191,33 @@ func main() {
 		panic(err)
 	}
 
-	// 获取 diff.tar.gz 文件信息
-	fileInfo, err := os.Stat("./tmp/diff.tar")
-	if err != nil {
-		log.Error().Err(err).Msg("获取文件信息失败")
-		panic(err)
-	}
-	fileSize := fileInfo.Size()
-
-	// 示例：计算 diff.tar.gz 的 SHA256
-	sha256sum, err := CalculateFileSHA256("./tmp/diff.tar.gz")
-	if err != nil {
-		panic(err)
-	}
-
-	// 计算 diff.tar 的 SHA256 用作 diffID
-	diffSha256sum, err := CalculateFileSHA256("./tmp/diff.tar")
-	if err != nil {
-		panic(err)
-	}
-
-	// 打印SHA256值和文件大小
-	log.Info().Str("sha256", sha256sum).Int64("fileSize", fileSize).Msg("文件SHA256计算完成")
-
-	// 打开文件用于上传
-	file, err := os.Open("./tmp/diff.tar.gz")
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
 	// 从环境变量读取认证信息
 	username := os.Getenv("username")
 	password := os.Getenv("password")
+	auth := Auth{Username: username, Password: password}
 
-	// 上传 layer 到阿里云镜像仓库
-	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
+	// 打开 diff.tar 文件
+	diffTarFile, err := os.Open("./tmp/diff.tar")
 	if err != nil {
-		log.Panic().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
+		log.Error().Err(err).Msg("打开 diff.tar 文件失败")
+		panic(err)
 	}
+	defer diffTarFile.Close()
 
-	log.Info().Msg("文件上传完成")
-
-	// 声明 updatedConfig 变量
-	var updatedConfig []byte
-
-	// 获取镜像配置信息
-	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
+	// 调用 BuildImage 函数执行构建操作
+	err = BuildImage(
+		"117503445/layerize-test-base",  // base image name
+		auth,                            // base image auth
+		diffTarFile,                     // diff.tar reader
+		"117503445/layerize-test-base",  // target image
+		auth,                            // target auth
+	)
 	if err != nil {
-		log.Error().Err(err).Msg("获取config失败")
-	} else {
-		log.Info().Int("configSize", len(config)).Msg("获取config成功")
-		log.Debug().RawJSON("config", config).Msg("config内容")
-
-		// 调用 UpdateOCIConfig 更新config，使用 diff.tar 的 sha256 作为 diffID
-		updatedConfig, err = UpdateOCIConfig(config, "sha256:"+diffSha256sum)
-		if err != nil {
-			log.Error().Err(err).Msg("更新config失败")
-		} else {
-			log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
-			log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
-
-			// 上传更新后的配置
-			err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", username, password)
-			if err != nil {
-				log.Error().Err(err).Msg("上传更新后的config失败")
-			} else {
-				log.Info().Msg("上传更新后的config成功")
-			}
-		}
+		log.Error().Err(err).Msg("BuildImage 执行失败")
+		panic(err)
 	}
 
-	// 只有在config更新成功时才继续处理manifest
-	if updatedConfig == nil {
-		log.Error().Msg("配置未更新成功，跳过manifest处理")
-		return
-	}
-
-	// 获取镜像manifest示例
-	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", "117503445/layerize-test-base", "latest", username, password)
-	if err != nil {
-		log.Error().Err(err).Msg("获取manifest失败")
-	} else {
-		log.Info().Str("contentType", contentType).Int("manifestSize", len(manifest)).Msg("获取manifest成功")
-		// 如果需要查看manifest内容，可以取消下面的注释
-		log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
-
-		// 计算更新后配置的SHA256摘要
-		configSHA256, err := CalculateDataSHA256(updatedConfig)
-		if err != nil {
-			log.Error().Err(err).Msg("计算配置SHA256失败")
-			return
-		}
-		configDigest := "sha256:" + configSHA256
-
-		// 更新 manifest 中的配置引用
-		var manifestData map[string]any
-		if err := json.Unmarshal(manifest, &manifestData); err != nil {
-			log.Error().Err(err).Msg("解析manifest失败")
-			return
-		}
-
-		if config, ok := manifestData["config"].(map[string]any); ok {
-			config["digest"] = configDigest
-			// 重新计算配置大小
-			config["size"] = len(updatedConfig)
-		}
-
-		// 重新序列化 manifest
-		updatedManifestWithNewConfig, err := json.Marshal(manifestData)
-		if err != nil {
-			log.Error().Err(err).Msg("序列化更新后的manifest失败")
-			return
-		}
-
-		// 调用 updateOCIManifest 更新manifest
-		updatedManifest, err := updateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
-		if err != nil {
-			log.Error().Err(err).Msg("更新manifest失败")
-		} else {
-			log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
-			log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
-
-			// 上传更新后的manifest到原始仓库
-			client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", username, password)
-			// err = client.UploadManifest(context.Background(), "117503445/layerize-test-base", "latest", updatedManifest, contentType)
-			// if err != nil {
-			// 	log.Error().Err(err).Msg("上传更新后的manifest失败")
-			// 	// 记录更多调试信息
-			// 	log.Debug().
-			// 		Str("contentType", contentType).
-			// 		Int("manifestSize", len(updatedManifest)).
-			// 		Msg("尝试上传的manifest信息")
-			// } else {
-			// 	log.Info().Msg("上传更新后的manifest成功")
-			// }
-
-			// 上传更新后的manifest到新仓库 117503445/layerize-test-base:08100314
-			err = client.UploadManifest(context.Background(), "117503445/layerize-test-base", "08100314", updatedManifest, contentType)
-			if err != nil {
-				log.Error().Err(err).Msg("上传更新后的manifest到 117503445/layerize-test-base:08100314 失败")
-			} else {
-				log.Info().Msg("上传更新后的manifest到 117503445/layerize-test-base:08100314 成功")
-			}
-		}
-	}
+	log.Info().Msg("镜像构建完成")
 }
 
 // UploadUpdatedConfigToRegistry 上传更新后的配置到镜像仓库

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -1143,4 +1144,42 @@ func continueConfigUploadWithToken(client *http.Client, configData []byte, confi
 
 	log.Info().Str("digest", configDigest).Msg("config上传成功")
 	return nil
+}
+
+// MapToTar converts a map of file paths to file contents into a tar archive
+func MapToTar(files map[string][]byte) ([]byte, error) {
+	// Create a buffer to write our archive to
+	buf := new(bytes.Buffer)
+
+	// Create a new tar archive
+	tw := tar.NewWriter(buf)
+	defer tw.Close()
+
+	// Add each file to the archive
+	for filePath, fileContent := range files {
+		// Create a new header
+		hdr := &tar.Header{
+			Name: filePath,
+			Mode: 0600,
+			Size: int64(len(fileContent)),
+		}
+
+		// Write the header
+		if err := tw.WriteHeader(hdr); err != nil {
+			return nil, err
+		}
+
+		// Write the file content
+		if _, err := tw.Write(fileContent); err != nil {
+			return nil, err
+		}
+	}
+
+	// Close the tar writer to flush any remaining data
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+
+	// Return the tar data as bytes
+	return buf.Bytes(), nil
 }

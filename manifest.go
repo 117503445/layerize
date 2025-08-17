@@ -139,7 +139,7 @@ func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
 		// 如果rootfs不存在，创建一个新的
 		rootfs = map[string]any{
 			"type":     "layers",
-			"diff_ids": []interface{}{},
+			"diff_ids": []any{},
 		}
 		imageConfig["rootfs"] = rootfs
 	}
@@ -154,12 +154,12 @@ func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
 	diffIDs, exists := rootfsMap["diff_ids"]
 	if !exists {
 		// 如果diff_ids不存在，创建一个新的数组
-		rootfsMap["diff_ids"] = []interface{}{}
+		rootfsMap["diff_ids"] = []any{}
 		diffIDs = rootfsMap["diff_ids"]
 	}
 
-	// 将diff_ids转换为[]interface{}
-	diffIDsArray, ok := diffIDs.([]interface{})
+	// 将diff_ids转换为[]any
+	diffIDsArray, ok := diffIDs.([]any)
 	if !ok {
 		return nil, fmt.Errorf("diff_ids field is not a JSON array")
 	}

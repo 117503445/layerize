@@ -11,18 +11,29 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Auth 用于存储认证信息
+type Auth struct {
+	Username string
+	Password string
+}
+
+// BuildImageParams 用于存储 BuildImage 函数的参数
+type BuildImageParams struct {
+	BaseImageName string
+	BaseImageAuth Auth
+	DiffTarReader io.Reader
+	TargetImage   string
+	TargetAuth    Auth
+}
+
 // BuildImage 封装了构建镜像的完整流程
 // 参数:
-// - baseImageName: 基础镜像名称，例如 "117503445/layerize-test-base"
-// - baseImageAuth: 基础镜像认证信息，包含用户名和密码
-// - diffTarReader: diff.tar文件的reader
-// - targetImage: 目标镜像名称
-// - targetAuth: 目标镜像认证信息，包含用户名和密码
-func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reader, targetImage string, targetAuth Auth) error {
+// - params: BuildImageParams 结构体，包含构建镜像所需的所有参数
+func BuildImage(params BuildImageParams) error {
 	goutils.InitZeroLog()
 
 	// 获取 diff.tar 的内容
-	diffTarData, err := io.ReadAll(diffTarReader)
+	diffTarData, err := io.ReadAll(params.DiffTarReader)
 	if err != nil {
 		log.Error().Err(err).Msg("读取diffTarReader失败")
 		return err
@@ -74,7 +85,7 @@ func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reade
 	}
 
 	// 上传 layer 到目标镜像仓库
-	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", targetImage, targetAuth.Username, targetAuth.Password)
+	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
 		return err
@@ -86,7 +97,7 @@ func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reade
 	var updatedConfig []byte
 
 	// 获取基础镜像配置信息
-	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", baseImageName, "latest", baseImageAuth.Username, baseImageAuth.Password)
+	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, "latest", params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取config失败")
 		return err
@@ -106,7 +117,7 @@ func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reade
 	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
 
 	// 上传更新后的配置
-	err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", targetImage, targetAuth.Username, targetAuth.Password)
+	err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的config失败")
 		return err
@@ -115,7 +126,7 @@ func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reade
 	log.Info().Msg("上传更新后的config成功")
 
 	// 获取基础镜像manifest示例
-	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", baseImageName, "latest", baseImageAuth.Username, baseImageAuth.Password)
+	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, "latest", params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取manifest失败")
 		return err
@@ -164,8 +175,8 @@ func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reade
 	log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
 
 	// 上传更新后的manifest到目标仓库
-	client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", targetAuth.Username, targetAuth.Password)
-	err = client.UploadManifest(context.Background(), targetImage, "latest", updatedManifest, contentType)
+	client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
+	err = client.UploadManifest(context.Background(), params.TargetImage, "latest", updatedManifest, contentType)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的manifest失败")
 		return err
@@ -173,12 +184,6 @@ func BuildImage(baseImageName string, baseImageAuth Auth, diffTarReader io.Reade
 
 	log.Info().Msg("上传更新后的manifest成功")
 	return nil
-}
-
-// Auth 用于存储认证信息
-type Auth struct {
-	Username string
-	Password string
 }
 
 func main() {
@@ -205,13 +210,14 @@ func main() {
 	defer diffTarFile.Close()
 
 	// 调用 BuildImage 函数执行构建操作
-	err = BuildImage(
-		"117503445/layerize-test-base",  // base image name
-		auth,                            // base image auth
-		diffTarFile,                     // diff.tar reader
-		"117503445/layerize-test-base",  // target image
-		auth,                            // target auth
-	)
+	params := BuildImageParams{
+		BaseImageName: "117503445/layerize-test-base", // base image name
+		BaseImageAuth: auth,                           // base image auth
+		DiffTarReader: diffTarFile,                    // diff.tar reader
+		TargetImage:   "117503445/layerize-test-base", // target image
+		TargetAuth:    auth,                           // target auth
+	}
+	err = BuildImage(params)
 	if err != nil {
 		log.Error().Err(err).Msg("BuildImage 执行失败")
 		panic(err)

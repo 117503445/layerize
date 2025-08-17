@@ -7,10 +7,10 @@ import (
 
 // MediaType constants
 const (
-	MediaTypeDockerManifest   = "application/vnd.docker.distribution.manifest.v2+json"
-	MediaTypeOCIManifest      = "application/vnd.oci.image.manifest.v1+json"
-	MediaTypeDockerLayer      = "application/vnd.docker.image.rootfs.diff.tar.gzip"
-	MediaTypeOCILayer         = "application/vnd.oci.image.layer.v1.tar+gzip"
+	MediaTypeDockerManifest = "application/vnd.docker.distribution.manifest.v2+json"
+	MediaTypeOCIManifest    = "application/vnd.oci.image.manifest.v1+json"
+	MediaTypeDockerLayer    = "application/vnd.docker.image.rootfs.diff.tar.gzip"
+	MediaTypeOCILayer       = "application/vnd.oci.image.layer.v1.tar+gzip"
 )
 
 // Common base struct for both manifest types
@@ -28,18 +28,18 @@ type ManifestLayer struct {
 
 // Docker v2 Manifest (Schema 2)
 type DockerManifestV2 struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	MediaType     string           `json:"mediaType,omitempty"`
-	Config        ManifestConfig   `json:"config"`
-	Layers        []ManifestLayer  `json:"layers"`
+	SchemaVersion int             `json:"schemaVersion"`
+	MediaType     string          `json:"mediaType,omitempty"`
+	Config        ManifestConfig  `json:"config"`
+	Layers        []ManifestLayer `json:"layers"`
 }
 
 // OCI Image Manifest
 type OCIManifest struct {
-	MediaType     string           `json:"mediaType"`
-	SchemaVersion int              `json:"schemaVersion"`
-	Config        ManifestConfig   `json:"config"`
-	Layers        []ManifestLayer  `json:"layers"`
+	MediaType     string          `json:"mediaType"`
+	SchemaVersion int             `json:"schemaVersion"`
+	Config        ManifestConfig  `json:"config"`
+	Layers        []ManifestLayer `json:"layers"`
 }
 
 // UpdateManifest adds a new layer to the manifest.
@@ -125,8 +125,8 @@ func updateOCIManifest(original []byte, digest string, size int64, mediaType str
 // config: the original OCI image config as byte slice
 // diffID: the diffID of the new layer to be added
 func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
-	// 使用map[string]interface{}来解析JSON，这样可以保留所有字段
-	var imageConfig map[string]interface{}
+	// 使用map[string]any来解析JSON，这样可以保留所有字段
+	var imageConfig map[string]any
 
 	// Unmarshal the config into our map
 	if err := json.Unmarshal(config, &imageConfig); err != nil {
@@ -137,15 +137,15 @@ func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
 	rootfs, exists := imageConfig["rootfs"]
 	if !exists {
 		// 如果rootfs不存在，创建一个新的
-		rootfs = map[string]interface{}{
-			"type":    "layers",
+		rootfs = map[string]any{
+			"type":     "layers",
 			"diff_ids": []interface{}{},
 		}
 		imageConfig["rootfs"] = rootfs
 	}
 
-	// 将rootfs转换为map[string]interface{}
-	rootfsMap, ok := rootfs.(map[string]interface{})
+	// 将rootfs转换为map[string]any
+	rootfsMap, ok := rootfs.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("rootfs field is not a JSON object")
 	}

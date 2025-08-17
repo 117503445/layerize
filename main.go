@@ -90,7 +90,7 @@ func main() {
 			}
 		}
 	}
-	
+
 	// 只有在config更新成功时才继续处理manifest
 	if updatedConfig == nil {
 		log.Error().Msg("配置未更新成功，跳过manifest处理")
@@ -115,13 +115,13 @@ func main() {
 		configDigest := "sha256:" + configSHA256
 
 		// 更新 manifest 中的配置引用
-		var manifestData map[string]interface{}
+		var manifestData map[string]any
 		if err := json.Unmarshal(manifest, &manifestData); err != nil {
 			log.Error().Err(err).Msg("解析manifest失败")
 			return
 		}
 
-		if config, ok := manifestData["config"].(map[string]interface{}); ok {
+		if config, ok := manifestData["config"].(map[string]any); ok {
 			config["digest"] = configDigest
 			// 重新计算配置大小
 			config["size"] = len(updatedConfig)

@@ -19,11 +19,12 @@ type Auth struct {
 
 // BuildImageParams 用于存储 BuildImage 函数的参数
 type BuildImageParams struct {
-	BaseImageName string
-	BaseImageAuth Auth
-	DiffTarReader io.Reader
-	TargetImage   string
-	TargetAuth    Auth
+	BaseImageName   string
+	BaseImageAuth   Auth
+	DiffTarGzReader io.Reader
+	DiffTarLen      int64
+	TargetImage     string
+	TargetAuth      Auth
 }
 
 // BuildImage 封装了构建镜像的完整流程
@@ -33,9 +34,9 @@ func BuildImage(params BuildImageParams) error {
 	goutils.InitZeroLog()
 
 	// 获取 diff.tar 的内容
-	diffTarData, err := io.ReadAll(params.DiffTarReader)
+	diffTarData, err := io.ReadAll(params.DiffTarGzReader)
 	if err != nil {
-		log.Error().Err(err).Msg("读取diffTarReader失败")
+		log.Error().Err(err).Msg("读取diffTarGzReader失败")
 		return err
 	}
 
@@ -55,19 +56,20 @@ func BuildImage(params BuildImageParams) error {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	// 压缩 diff.tar 为 diff.tar.gz
-	if err := compressToTarGz("./tmp", tmpFile.Name()); err != nil {
-		log.Error().Err(err).Msg("压缩文件失败")
+	// 直接将diffTarData写入临时文件，因为已经是压缩格式
+	if _, err := tmpFile.Write(diffTarData); err != nil {
+		log.Error().Err(err).Msg("写入临时文件失败")
+		return err
+	}
+
+	// 如果需要重新定位文件指针到开始位置
+	if _, err := tmpFile.Seek(0, 0); err != nil {
+		log.Error().Err(err).Msg("重置文件指针失败")
 		return err
 	}
 
 	// 获取压缩文件信息
-	fileInfo, err := tmpFile.Stat()
-	if err != nil {
-		log.Error().Err(err).Msg("获取临时文件信息失败")
-		return err
-	}
-	fileSize := fileInfo.Size()
+	fileSize := params.DiffTarLen
 
 	// 重新打开文件用于上传
 	file, err := os.Open(tmpFile.Name())
@@ -209,13 +211,21 @@ func main() {
 	}
 	defer diffTarFile.Close()
 
+	// 获取 diff.tar 文件信息用于长度
+	diffTarFileInfo, err := diffTarFile.Stat()
+	if err != nil {
+		log.Error().Err(err).Msg("获取 diff.tar 文件信息失败")
+		panic(err)
+	}
+
 	// 调用 BuildImage 函数执行构建操作
 	params := BuildImageParams{
-		BaseImageName: "117503445/layerize-test-base", // base image name
-		BaseImageAuth: auth,                           // base image auth
-		DiffTarReader: diffTarFile,                    // diff.tar reader
-		TargetImage:   "117503445/layerize-test-base", // target image
-		TargetAuth:    auth,                           // target auth
+		BaseImageName:   "117503445/layerize-test-base", // base image name
+		BaseImageAuth:   auth,                           // base image auth
+		DiffTarGzReader: diffTarFile,                    // diff.tar.gz reader
+		DiffTarLen:      diffTarFileInfo.Size(),         // diff.tar 长度
+		TargetImage:     "117503445/layerize-test-base", // target image
+		TargetAuth:      auth,                           // target auth
 	}
 	err = BuildImage(params)
 	if err != nil {

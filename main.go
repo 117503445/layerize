@@ -296,6 +296,18 @@ func main() {
 
 	log.Info().Msg("镜像构建完成")
 
+	// 验证构建的镜像
+	err = validateBuiltImage(content)
+	if err != nil {
+		log.Error().Err(err).Msg("镜像验证失败")
+		panic(err)
+	}
+
+	log.Info().Msg("镜像验证完成")
+}
+
+// validateBuiltImage 验证构建的镜像是否正确
+func validateBuiltImage(content string) error {
 	// 添加 podman 测试
 	// podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run -it --rm --entrypoint sh registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357
 	// 要求存在 new.txt，且内容是 content。old.txt 需要不存在
@@ -303,7 +315,7 @@ func main() {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Error().Err(err).Str("output", string(output)).Msg("执行 podman pull 和 cat new.txt 失败")
-		panic(err)
+		return fmt.Errorf("执行 podman pull 和 cat new.txt 失败: %w", err)
 	}
 
 	// 只获取最后一行作为文件内容，忽略可能的容器ID等信息
@@ -312,7 +324,7 @@ func main() {
 
 	if lastLine != content {
 		log.Error().Str("expected", content).Str("actual", lastLine).Msg("new.txt 内容不匹配")
-		panic("new.txt 内容不匹配")
+		return fmt.Errorf("new.txt 内容不匹配: 期望 %s, 实际 %s", content, lastLine)
 	}
 
 	log.Info().Str("content", content).Msg("验证 new.txt 内容成功")
@@ -322,15 +334,16 @@ func main() {
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		log.Error().Err(err).Str("output", string(output)).Msg("执行 podman run ls 失败")
-		panic(err)
+		return fmt.Errorf("执行 podman run ls 失败: %w", err)
 	}
 
 	if strings.Contains(string(output), "old.txt") {
 		log.Error().Str("output", string(output)).Msg("old.txt 应该不存在但被找到了")
-		panic("old.txt 应该不存在但被找到了")
+		return fmt.Errorf("old.txt 应该不存在但被找到了")
 	}
 
 	log.Info().Msg("验证 old.txt 不存在成功")
+	return nil
 }
 
 // UploadUpdatedConfigToRegistry 上传更新后的配置到镜像仓库

@@ -28,10 +28,12 @@ type BuildImageParams struct {
 	DiffTarLen      int64
 	TargetImage     string
 	TargetAuth      Auth
+	BaseImageTag    string
+	TargetImageTag  string
 }
 
 // BuildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
-func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth Auth, baseImageName string, baseImageAuth Auth) error {
+func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth Auth, baseImageName string, baseImageAuth Auth, baseImageTag string, targetImageTag string) error {
 	// 使用 MapToTar 创建 tar 字节数组
 	tarData, err := MapToTar(files)
 	if err != nil {
@@ -59,6 +61,8 @@ func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth A
 		DiffTarLen:      int64(gzData.Len()),
 		TargetImage:     targetImage,
 		TargetAuth:      targetAuth,
+		BaseImageTag:    baseImageTag,
+		TargetImageTag:  targetImageTag,
 	}
 	
 	return BuildImage(params)
@@ -135,8 +139,14 @@ func BuildImage(params BuildImageParams) error {
 	// 声明 updatedConfig 变量
 	var updatedConfig []byte
 
+	// 确定基础镜像标签
+	baseImageTag := "latest"
+	if params.BaseImageTag != "" {
+		baseImageTag = params.BaseImageTag
+	}
+
 	// 获取基础镜像配置信息
-	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, "latest", params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取config失败")
 		return err
@@ -164,8 +174,14 @@ func BuildImage(params BuildImageParams) error {
 
 	log.Info().Msg("上传更新后的config成功")
 
+	// 确定基础镜像标签
+	baseImageTag = "latest"
+	if params.BaseImageTag != "" {
+		baseImageTag = params.BaseImageTag
+	}
+
 	// 获取基础镜像manifest示例
-	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, "latest", params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取manifest失败")
 		return err
@@ -213,9 +229,15 @@ func BuildImage(params BuildImageParams) error {
 	log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
 	log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
 
+	// 确定目标镜像标签
+	targetImageTag := "latest"
+	if params.TargetImageTag != "" {
+		targetImageTag = params.TargetImageTag
+	}
+
 	// 上传更新后的manifest到目标仓库
 	client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
-	err = client.UploadManifest(context.Background(), params.TargetImage, "latest", updatedManifest, contentType)
+	err = client.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的manifest失败")
 		return err
@@ -253,6 +275,8 @@ func main() {
 		auth,                           // target auth
 		"117503445/layerize-test-base", // base image name
 		auth,                           // base image auth
+		"latest",                       // base image tag
+		"latest",                       // target image tag
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("BuildImageFromMap 执行失败")

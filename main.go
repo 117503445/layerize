@@ -240,33 +240,22 @@ func main() {
 	password := os.Getenv("password")
 	auth := Auth{Username: username, Password: password}
 
-	// 打开 diff.tar 文件
-	diffTarFile, err := os.Open("./tmp/diff.tar")
-	if err != nil {
-		log.Error().Err(err).Msg("打开 diff.tar 文件失败")
-		panic(err)
-	}
-	defer diffTarFile.Close()
-
-	// 获取 diff.tar 文件信息用于长度
-	diffTarFileInfo, err := diffTarFile.Stat()
-	if err != nil {
-		log.Error().Err(err).Msg("获取 diff.tar 文件信息失败")
-		panic(err)
+	// 创建文件映射，模拟 tmp/diff.tar 中的内容
+	files := map[string][]byte{
+		"examples/new.txt":      []byte("08081143"),
+		"examples/.wh.old.txt":  []byte(""),
 	}
 
-	// 调用 BuildImage 函数执行构建操作
-	params := BuildImageParams{
-		BaseImageName:   "117503445/layerize-test-base", // base image name
-		BaseImageAuth:   auth,                           // base image auth
-		DiffTarGzReader: diffTarFile,                    // diff.tar.gz reader
-		DiffTarLen:      diffTarFileInfo.Size(),         // diff.tar 长度
-		TargetImage:     "117503445/layerize-test-base", // target image
-		TargetAuth:      auth,                           // target auth
-	}
-	err = BuildImage(params)
+	// 调用 BuildImageFromMap 函数执行构建操作
+	err = BuildImageFromMap(
+		files,
+		"117503445/layerize-test-base", // target image
+		auth,                           // target auth
+		"117503445/layerize-test-base", // base image name
+		auth,                           // base image auth
+	)
 	if err != nil {
-		log.Error().Err(err).Msg("BuildImage 执行失败")
+		log.Error().Err(err).Msg("BuildImageFromMap 执行失败")
 		panic(err)
 	}
 

@@ -300,14 +300,18 @@ func main() {
 	// podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run -it --rm --entrypoint sh registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357
 	// 要求存在 new.txt，且内容是 content。old.txt 需要不存在
 	cmd := exec.Command("sh", "-c", "podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run --rm --entrypoint cat registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 /new.txt")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Error().Err(err).Msg("执行 podman pull 和 cat new.txt 失败")
+		log.Error().Err(err).Str("output", string(output)).Msg("执行 podman pull 和 cat new.txt 失败")
 		panic(err)
 	}
 
-	if string(output) != content {
-		log.Error().Str("expected", content).Str("actual", string(output)).Msg("new.txt 内容不匹配")
+	// 只获取最后一行作为文件内容，忽略可能的容器ID等信息
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	lastLine := lines[len(lines)-1]
+
+	if lastLine != content {
+		log.Error().Str("expected", content).Str("actual", lastLine).Msg("new.txt 内容不匹配")
 		panic("new.txt 内容不匹配")
 	}
 
@@ -315,9 +319,9 @@ func main() {
 
 	// 检查 old.txt 是否不存在
 	cmd = exec.Command("sh", "-c", "podman run --rm --entrypoint ls registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357")
-	output, err = cmd.Output()
+	output, err = cmd.CombinedOutput()
 	if err != nil {
-		log.Error().Err(err).Msg("执行 podman run ls 失败")
+		log.Error().Err(err).Str("output", string(output)).Msg("执行 podman run ls 失败")
 		panic(err)
 	}
 

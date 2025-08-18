@@ -14,14 +14,14 @@ func TestCalculateFileSHA256(t *testing.T) {
 	goutils.InitZeroLog()
 
 	// 测试使用现有的 ./tmp/diff.tar.gz 文件
-	hash, err := CalculateFileSHA256("./tmp/diff.tar.gz")
+	hash, err := calculateFileSHA256("./tmp/diff.tar.gz")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
 	// 验证哈希值不为空且长度正确 (SHA256 应该是 64 个字符)
 	assert.Len(t, hash, 64)
 	log.Info().Str("hash", hash).Msg("CalculateFileSHA256")
-	
+
 	// 创建一个临时文件用于测试
 	content := "Hello, World!"
 	tmpfile, err := os.CreateTemp("", "test")
@@ -35,7 +35,7 @@ func TestCalculateFileSHA256(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 计算文件的 SHA256
-	hash, err = CalculateFileSHA256(tmpfile.Name())
+	hash, err = calculateFileSHA256(tmpfile.Name())
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
@@ -44,6 +44,6 @@ func TestCalculateFileSHA256(t *testing.T) {
 	assert.Equal(t, expectedHash, hash)
 
 	// 测试不存在的文件
-	_, err = CalculateFileSHA256("non-existent-file.txt")
+	_, err = calculateFileSHA256("non-existent-file.txt")
 	assert.Error(t, err)
 }

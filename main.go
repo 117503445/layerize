@@ -269,10 +269,12 @@ func main() {
 	password := os.Getenv("password")
 	auth := Auth{Username: username, Password: password}
 
+	content := goutils.TimeStrMilliSec()
+
 	// 创建文件映射，模拟 tmp/diff.tar 中的内容
 	files := map[string][]byte{
-		"examples/new.txt":     []byte("08081143"),
-		"examples/.wh.old.txt": []byte(""),
+		"new.txt":     []byte(content),
+		".wh.old.txt": []byte(""),
 	}
 
 	// 调用 BuildImageFromMap 函数执行构建操作

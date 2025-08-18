@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 
@@ -25,6 +28,40 @@ type BuildImageParams struct {
 	DiffTarLen      int64
 	TargetImage     string
 	TargetAuth      Auth
+}
+
+// BuildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
+func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth Auth, baseImageName string, baseImageAuth Auth) error {
+	// 使用 MapToTar 创建 tar 字节数组
+	tarData, err := MapToTar(files)
+	if err != nil {
+		log.Error().Err(err).Msg("创建 tar 数据失败")
+		return fmt.Errorf("创建 tar 数据失败: %w", err)
+	}
+
+	// 压缩为 tar.gz 格式
+	var gzData bytes.Buffer
+	gzWriter := gzip.NewWriter(&gzData)
+	if _, err := gzWriter.Write(tarData); err != nil {
+		log.Error().Err(err).Msg("写入 gzip 数据失败")
+		return fmt.Errorf("写入 gzip 数据失败: %w", err)
+	}
+	if err := gzWriter.Close(); err != nil {
+		log.Error().Err(err).Msg("关闭 gzip writer 失败")
+		return fmt.Errorf("关闭 gzip writer 失败: %w", err)
+	}
+
+	// 调用 BuildImage
+	params := BuildImageParams{
+		BaseImageName:   baseImageName,
+		BaseImageAuth:   baseImageAuth,
+		DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
+		DiffTarLen:      int64(gzData.Len()),
+		TargetImage:     targetImage,
+		TargetAuth:      targetAuth,
+	}
+	
+	return BuildImage(params)
 }
 
 // BuildImage 封装了构建镜像的完整流程

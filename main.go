@@ -64,7 +64,7 @@ func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth A
 		BaseImageTag:    baseImageTag,
 		TargetImageTag:  targetImageTag,
 	}
-	
+
 	return BuildImage(params)
 }
 
@@ -264,8 +264,8 @@ func main() {
 
 	// 创建文件映射，模拟 tmp/diff.tar 中的内容
 	files := map[string][]byte{
-		"examples/new.txt":      []byte("08081143"),
-		"examples/.wh.old.txt":  []byte(""),
+		"examples/new.txt":     []byte("08081143"),
+		"examples/.wh.old.txt": []byte(""),
 	}
 
 	// 调用 BuildImageFromMap 函数执行构建操作
@@ -276,7 +276,7 @@ func main() {
 		"117503445/layerize-test-base", // base image name
 		auth,                           // base image auth
 		"latest",                       // base image tag
-		"latest",                       // target image tag
+		"08182339",                     // target image tag
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("BuildImageFromMap 执行失败")

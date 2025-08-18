@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -1182,4 +1183,22 @@ func MapToTar(files map[string][]byte) ([]byte, error) {
 
 	// Return the tar data as bytes
 	return buf.Bytes(), nil
+}
+
+// DecompressGzipData 解压缩gzip数据
+func DecompressGzipData(data []byte) ([]byte, error) {
+	// 创建gzip reader
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("创建gzip reader失败: %w", err)
+	}
+	defer reader.Close()
+
+	// 读取解压缩后的数据
+	decompressedData, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("读取解压缩数据失败: %w", err)
+	}
+
+	return decompressedData, nil
 }

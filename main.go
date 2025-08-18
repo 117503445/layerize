@@ -75,13 +75,20 @@ func BuildImage(params BuildImageParams) error {
 	goutils.InitZeroLog()
 
 	// 获取 diff.tar 的内容
-	diffTarData, err := io.ReadAll(params.DiffTarGzReader)
+	diffTarGzData, err := io.ReadAll(params.DiffTarGzReader)
 	if err != nil {
 		log.Error().Err(err).Msg("读取diffTarGzReader失败")
 		return err
 	}
 
-	// 计算 diff.tar 的 SHA256 用作 diffID
+	// 解压缩diffTarGzData获取未压缩的数据
+	diffTarData, err := DecompressGzipData(diffTarGzData)
+	if err != nil {
+		log.Error().Err(err).Msg("解压缩diffTar数据失败")
+		return err
+	}
+
+	// 计算未压缩 diff.tar 的 SHA256 用作 diffID
 	diffSha256sum, err := CalculateDataSHA256(diffTarData)
 	if err != nil {
 		log.Error().Err(err).Msg("计算diff.tar SHA256失败")
@@ -97,8 +104,8 @@ func BuildImage(params BuildImageParams) error {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	// 直接将diffTarData写入临时文件，因为已经是压缩格式
-	if _, err := tmpFile.Write(diffTarData); err != nil {
+	// 直接将压缩的diffTarData写入临时文件
+	if _, err := tmpFile.Write(diffTarGzData); err != nil {
 		log.Error().Err(err).Msg("写入临时文件失败")
 		return err
 	}
@@ -276,7 +283,7 @@ func main() {
 		"117503445/layerize-test-base", // base image name
 		auth,                           // base image auth
 		"latest",                       // base image tag
-		"08182339",                     // target image tag
+		"08182357",                     // target image tag
 	)
 	if err != nil {
 		log.Error().Err(err).Msg("BuildImageFromMap 执行失败")

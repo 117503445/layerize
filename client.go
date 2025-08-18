@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -482,30 +481,4 @@ func (c *Client) uploadManifest(ctx context.Context, repository, reference strin
 		Str("reference", reference).
 		Msg("Manifest 上传成功")
 	return nil
-}
-
-// getBlob 获取 blob 数据
-func (c *Client) getBlob(ctx context.Context, repository, digest string) ([]byte, error) {
-	scope := fmt.Sprintf("repository:%s:pull", repository)
-
-	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/v2/%s/blobs/%s", repository, digest), nil, scope)
-	if err != nil {
-		return nil, fmt.Errorf("获取 blob 失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取 blob 失败，状态码: %d", resp.StatusCode)
-	}
-
-	return io.ReadAll(resp.Body)
-}
-
-// calculateReaderSHA256 计算 reader 数据的 SHA256 哈希值
-func calculateReaderSHA256(reader io.Reader) (string, error) {
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, reader); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
 }

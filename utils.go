@@ -10,92 +10,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/rs/zerolog/log"
 )
-
-func compressToTarGz(sourceDir, outputTarGz string) error {
-	// if err := compressToTarGz("tmp", "tmp.tar.gz"); err != nil {
-	// 	log.Panic().Err(err).Msg("打包失败")
-	// }
-
-	// 检查源目录是否存在
-	info, err := os.Stat(sourceDir)
-	if os.IsNotExist(err) {
-		log.Error().Str("path", sourceDir).Msg("源目录不存在")
-		return fmt.Errorf("源目录不存在: %s", sourceDir)
-	}
-	if !info.IsDir() {
-		log.Error().Str("path", sourceDir).Msg("源路径不是目录")
-		return fmt.Errorf("源路径不是目录: %s", sourceDir)
-	}
-
-	log.Info().
-		Str("source", sourceDir).
-		Str("output", outputTarGz).
-		Msg("compressToTarGz")
-
-	// 构建 tar 命令
-	// tar -czf output.tar.gz -C /path/to/source .
-	cmd := exec.Command("tar", "-czf", outputTarGz, "-C", sourceDir, ".")
-
-	// 捕获命令的标准输出和错误（可选）
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	// 执行命令
-	err = cmd.Run()
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("command", cmd.String()).
-			Msg("执行 tar 命令失败")
-		return fmt.Errorf("执行 tar 命令失败: %w", err)
-	}
-
-	log.Info().
-		Str("output", outputTarGz).
-		Dur("duration", cmd.ProcessState.UserTime()).
-		Msg("打包成功")
-
-	return nil
-}
-
-// getContentLength 获取reader的内容长度（如果可能）
-func getContentLength(reader io.Reader) int64 {
-	// 如果reader实现了Sizer接口，则直接获取大小
-	if s, ok := reader.(interface{ Size() int64 }); ok {
-		return s.Size()
-	}
-
-	// 如果是*os.File类型，可以通过Stat获取大小
-	if f, ok := reader.(*os.File); ok {
-		if stat, err := f.Stat(); err == nil {
-			return stat.Size()
-		}
-	}
-
-	// 无法确定大小
-	return 0
-}
-
-// CalculateSHA256 计算给定数据的 SHA256 哈希值
-func calculateSHA256(reader io.Reader) (string, error) {
-	// 创建一个新的 SHA256 hasher
-	hasher := sha256.New()
-
-	// 将数据复制到 hasher
-	if _, err := io.Copy(hasher, reader); err != nil {
-		log.Error().Err(err).Msg("读取数据时出错")
-		return "", fmt.Errorf("读取数据时出错: %w", err)
-	}
-
-	// 计算哈希值并返回十六进制表示
-	hashBytes := hasher.Sum(nil)
-	return fmt.Sprintf("%x", hashBytes), nil
-}
 
 // CalculateFileSHA256 计算指定文件的 SHA256 哈希值
 func calculateFileSHA256(filePath string) (string, error) {
@@ -135,15 +53,6 @@ func calculateDataSHA256(data []byte) (string, error) {
 	// 计算哈希值并返回十六进制表示
 	hashBytes := hasher.Sum(nil)
 	return fmt.Sprintf("%x", hashBytes), nil
-}
-
-// UploadLayerToRegistry 上传layer到镜像仓库
-// reader: layer数据的io.Reader
-// sha256sum: layer的sha256摘要
-// registryURL: 镜像仓库URL (例如: "http://localhost:5000")
-// repository: 镜像仓库中的repository名称 (例如: "myapp")
-func uploadLayerToRegistry(reader io.Reader, sha256sum, registryURL, repository string) error {
-	return UploadLayerToRegistryWithAuth(reader, sha256sum, registryURL, repository, "", "")
 }
 
 // UploadLayerToRegistryWithAuth 上传layer到镜像仓库（带认证）
@@ -586,14 +495,6 @@ func continueUploadWithBasicAuth(client *http.Client, reader io.Reader, sha256su
 	log.Info().Str("sha256", sha256sum).Msg("layer上传成功")
 	return nil
 
-}
-
-// GetManifest 获取镜像的manifest
-// registryURL: 镜像仓库URL (例如: "http://localhost:5000")
-// repository: 镜像仓库中的repository名称 (例如: "myapp")
-// reference: 镜像tag或digest (例如: "latest" 或 "sha256:...")
-func getManifest(registryURL, repository, reference string) ([]byte, string, error) {
-	return GetManifestWithAuth(registryURL, repository, reference, "", "")
 }
 
 // GetManifestWithAuth 获取镜像的manifest（带认证）
@@ -1041,13 +942,13 @@ func continueConfigUploadWithBasicAuth(client *http.Client, configData []byte, c
 	if strings.Contains(location, "?") {
 		separator = "&"
 	}
-	
+
 	// 确保digest格式正确
 	digest := configDigest
 	if strings.HasPrefix(digest, "sha256:") {
 		digest = digest[7:] // 移除 "sha256:" 前缀
 	}
-	
+
 	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, digest)
 
 	putReq, err := http.NewRequest("PUT", putURL, bytes.NewReader(configData))
@@ -1106,13 +1007,13 @@ func continueConfigUploadWithToken(client *http.Client, configData []byte, confi
 	if strings.Contains(location, "?") {
 		separator = "&"
 	}
-	
+
 	// 确保digest格式正确
 	digest := configDigest
 	if strings.HasPrefix(digest, "sha256:") {
 		digest = digest[7:] // 移除 "sha256:" 前缀
 	}
-	
+
 	putURL := fmt.Sprintf("%s%sdigest=sha256:%s", location, separator, digest)
 
 	putReq, err := http.NewRequest("PUT", putURL, bytes.NewReader(configData))

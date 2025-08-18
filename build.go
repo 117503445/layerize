@@ -13,8 +13,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// BuildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
-func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth Auth, baseImageName string, baseImageAuth Auth, baseImageTag string, targetImageTag string) error {
+// buildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
+func buildImageFromMap(files map[string][]byte, targetImage string, targetAuth Auth, baseImageName string, baseImageAuth Auth, baseImageTag string, targetImageTag string) error {
 	// 使用 MapToTar 创建 tar 字节数组
 	tarData, err := MapToTar(files)
 	if err != nil {
@@ -70,7 +70,7 @@ func BuildImage(params BuildImageParams) error {
 	}
 
 	// 计算未压缩 diff.tar 的 SHA256 用作 diffID
-	diffSha256sum, err := CalculateDataSHA256(diffTarData)
+	diffSha256sum, err := calculateDataSHA256(diffTarData)
 	if err != nil {
 		log.Error().Err(err).Msg("计算diff.tar SHA256失败")
 		return err
@@ -109,7 +109,7 @@ func BuildImage(params BuildImageParams) error {
 	defer file.Close()
 
 	// 计算压缩文件的SHA256
-	sha256sum, err := CalculateFileSHA256(tmpFile.Name())
+	sha256sum, err := calculateFileSHA256(tmpFile.Name())
 	if err != nil {
 		log.Error().Err(err).Msg("计算压缩文件SHA256失败")
 		return err
@@ -134,7 +134,7 @@ func BuildImage(params BuildImageParams) error {
 	}
 
 	// 获取基础镜像配置信息
-	config, err := GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	config, err := getConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取config失败")
 		return err
@@ -154,7 +154,7 @@ func BuildImage(params BuildImageParams) error {
 	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
 
 	// 上传更新后的配置
-	err = UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
+	err = uploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的config失败")
 		return err
@@ -180,7 +180,7 @@ func BuildImage(params BuildImageParams) error {
 	log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
 
 	// 计算更新后配置的SHA256摘要
-	configSHA256, err := CalculateDataSHA256(updatedConfig)
+	configSHA256, err := calculateDataSHA256(updatedConfig)
 	if err != nil {
 		log.Error().Err(err).Msg("计算配置SHA256失败")
 		return err
@@ -225,7 +225,7 @@ func BuildImage(params BuildImageParams) error {
 
 	// 上传更新后的manifest到目标仓库
 	client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
-	err = client.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
+	err = client.uploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的manifest失败")
 		return err

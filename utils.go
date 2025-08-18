@@ -82,7 +82,7 @@ func getContentLength(reader io.Reader) int64 {
 }
 
 // CalculateSHA256 计算给定数据的 SHA256 哈希值
-func CalculateSHA256(reader io.Reader) (string, error) {
+func calculateSHA256(reader io.Reader) (string, error) {
 	// 创建一个新的 SHA256 hasher
 	hasher := sha256.New()
 
@@ -98,7 +98,7 @@ func CalculateSHA256(reader io.Reader) (string, error) {
 }
 
 // CalculateFileSHA256 计算指定文件的 SHA256 哈希值
-func CalculateFileSHA256(filePath string) (string, error) {
+func calculateFileSHA256(filePath string) (string, error) {
 	// 打开文件
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -122,7 +122,7 @@ func CalculateFileSHA256(filePath string) (string, error) {
 }
 
 // CalculateDataSHA256 计算数据的 SHA256 哈希值
-func CalculateDataSHA256(data []byte) (string, error) {
+func calculateDataSHA256(data []byte) (string, error) {
 	// 创建一个新的 SHA256 hasher
 	hasher := sha256.New()
 
@@ -142,7 +142,7 @@ func CalculateDataSHA256(data []byte) (string, error) {
 // sha256sum: layer的sha256摘要
 // registryURL: 镜像仓库URL (例如: "http://localhost:5000")
 // repository: 镜像仓库中的repository名称 (例如: "myapp")
-func UploadLayerToRegistry(reader io.Reader, sha256sum, registryURL, repository string) error {
+func uploadLayerToRegistry(reader io.Reader, sha256sum, registryURL, repository string) error {
 	return UploadLayerToRegistryWithAuth(reader, sha256sum, registryURL, repository, "", "")
 }
 
@@ -592,7 +592,7 @@ func continueUploadWithBasicAuth(client *http.Client, reader io.Reader, sha256su
 // registryURL: 镜像仓库URL (例如: "http://localhost:5000")
 // repository: 镜像仓库中的repository名称 (例如: "myapp")
 // reference: 镜像tag或digest (例如: "latest" 或 "sha256:...")
-func GetManifest(registryURL, repository, reference string) ([]byte, string, error) {
+func getManifest(registryURL, repository, reference string) ([]byte, string, error) {
 	return GetManifestWithAuth(registryURL, repository, reference, "", "")
 }
 
@@ -732,7 +732,7 @@ func getManifestWithToken(client *http.Client, manifestURL, token string) ([]byt
 // reference: 镜像标签 (例如: "latest")
 // username: 认证用户名
 // password: 认证密码
-func GetConfigWithAuth(registryURL, repository, reference, username, password string) ([]byte, error) {
+func getConfigWithAuth(registryURL, repository, reference, username, password string) ([]byte, error) {
 	// 首先获取manifest
 	manifestData, _, err := GetManifestWithAuth(registryURL, repository, reference, username, password)
 	if err != nil {
@@ -864,7 +864,7 @@ func getConfigWithToken(client *http.Client, configURL, token string) ([]byte, e
 // repository: 镜像仓库中的repository名称 (例如: "117503445/layerize-test-base")
 // username: 认证用户名
 // password: 认证密码
-func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL, repository, username, password string) error {
+func uploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL, repository, username, password string) error {
 	// 第一步：发起上传请求
 	uploadURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 

@@ -31,8 +31,8 @@ func main() {
 		".wh.old.txt": []byte(""),
 	}
 
-	// 调用 BuildImageFromMap 函数执行构建操作
-	err = BuildImageFromMap(
+	// 调用 buildImageFromMap 函数执行构建操作
+	err = buildImageFromMap(
 		files,
 		"117503445/layerize-test-base", // target image
 		auth,                           // target auth
@@ -42,7 +42,7 @@ func main() {
 		"08182357",                     // target image tag
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("BuildImageFromMap 执行失败")
+		log.Error().Err(err).Msg("buildImageFromMap 执行失败")
 		panic(err)
 	}
 

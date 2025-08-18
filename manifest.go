@@ -44,7 +44,7 @@ type OCIManifest struct {
 
 // UpdateManifest adds a new layer to the manifest.
 // It detects whether the manifest is Docker v2 or OCI and handles accordingly.
-func UpdateManifest(originalManifest []byte, newLayerDigest string, newLayerSize int64, mediaType string) ([]byte, string, error) {
+func updateManifest(originalManifest []byte, newLayerDigest string, newLayerSize int64, mediaType string) ([]byte, string, error) {
 	// Detect manifest type by MediaType
 	var generic struct {
 		MediaType string `json:"mediaType"`

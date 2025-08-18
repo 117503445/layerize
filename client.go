@@ -329,8 +329,8 @@ func (c *Client) getAuthURL(ctx context.Context, scope string) (string, error) {
 	return "", fmt.Errorf("无法从registry获取认证URL")
 }
 
-// UploadLayer 上传 layer 到 registry
-func (c *Client) UploadLayer(ctx context.Context, repository, digest string, layerData io.Reader) error {
+// uploadLayer 上传 layer 到 registry
+func (c *Client) uploadLayer(ctx context.Context, repository, digest string, layerData io.Reader) error {
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 
 	// 第一步：发起上传请求
@@ -402,8 +402,8 @@ func (c *Client) UploadLayer(ctx context.Context, repository, digest string, lay
 	return nil
 }
 
-// GetManifest 获取镜像 manifest
-func (c *Client) GetManifest(ctx context.Context, repository, reference string) ([]byte, string, error) {
+// getManifest 获取镜像 manifest
+func (c *Client) getManifest(ctx context.Context, repository, reference string) ([]byte, string, error) {
 	scope := fmt.Sprintf("repository:%s:pull", repository)
 
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/v2/%s/manifests/%s", repository, reference), nil, scope)
@@ -425,8 +425,8 @@ func (c *Client) GetManifest(ctx context.Context, repository, reference string) 
 	return body, contentType, nil
 }
 
-// UploadManifest 上传 manifest 到 registry
-func (c *Client) UploadManifest(ctx context.Context, repository, reference string, manifest []byte, contentType string) error {
+// uploadManifest 上传 manifest 到 registry
+func (c *Client) uploadManifest(ctx context.Context, repository, reference string, manifest []byte, contentType string) error {
 	log.Info().
 		Str("repository", repository).
 		Str("reference", reference).
@@ -484,8 +484,8 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 	return nil
 }
 
-// GetBlob 获取 blob 数据
-func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte, error) {
+// getBlob 获取 blob 数据
+func (c *Client) getBlob(ctx context.Context, repository, digest string) ([]byte, error) {
 	scope := fmt.Sprintf("repository:%s:pull", repository)
 
 	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("/v2/%s/blobs/%s", repository, digest), nil, scope)
@@ -501,8 +501,8 @@ func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte
 	return io.ReadAll(resp.Body)
 }
 
-// CalculateReaderSHA256 计算 reader 数据的 SHA256 哈希值
-func CalculateReaderSHA256(reader io.Reader) (string, error) {
+// calculateReaderSHA256 计算 reader 数据的 SHA256 哈希值
+func calculateReaderSHA256(reader io.Reader) (string, error) {
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, reader); err != nil {
 		return "", err

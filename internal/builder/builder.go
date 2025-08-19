@@ -18,28 +18,28 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// BuildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
+// BuildImageFromMap creates a tar from file mapping, compresses it to tar.gz, and then builds an image
 func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
-	// 使用 MapToTar 创建 tar 字节数组
+	// Create tar byte array using MapToTar
 	tarData, err := utils.MapToTar(files)
 	if err != nil {
-		log.Error().Err(err).Msg("创建 tar 数据失败")
-		return fmt.Errorf("创建 tar 数据失败: %w", err)
+		log.Error().Err(err).Msg("Failed to create tar data")
+		return fmt.Errorf("failed to create tar data: %w", err)
 	}
 
-	// 压缩为 tar.gz 格式
+	// Compress to tar.gz format
 	var gzData bytes.Buffer
 	gzWriter := gzip.NewWriter(&gzData)
 	if _, err := gzWriter.Write(tarData); err != nil {
-		log.Error().Err(err).Msg("写入 gzip 数据失败")
-		return fmt.Errorf("写入 gzip 数据失败: %w", err)
+		log.Error().Err(err).Msg("Failed to write gzip data")
+		return fmt.Errorf("failed to write gzip data: %w", err)
 	}
 	if err := gzWriter.Close(); err != nil {
-		log.Error().Err(err).Msg("关闭 gzip writer 失败")
-		return fmt.Errorf("关闭 gzip writer 失败: %w", err)
+		log.Error().Err(err).Msg("Failed to close gzip writer")
+		return fmt.Errorf("failed to close gzip writer: %w", err)
 	}
 
-	// 调用 BuildImage
+	// Call BuildImage
 	params := types.BuildImageParams{
 		BaseImageName:   baseImageName,
 		BaseImageAuth:   baseImageAuth,
@@ -54,188 +54,188 @@ func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth t
 	return BuildImage(params)
 }
 
-// BuildImage 封装了构建镜像的完整流程
-// 参数:
-// - params: BuildImageParams 结构体，包含构建镜像所需的所有参数
+// BuildImage encapsulates the complete image building process
+// Parameters:
+// - params: BuildImageParams struct containing all parameters needed to build the image
 func BuildImage(params types.BuildImageParams) error {
 	goutils.InitZeroLog()
 
-	// 获取 diff.tar 的内容
+	// Get the content of diff.tar
 	diffTarGzData, err := io.ReadAll(params.DiffTarGzReader)
 	if err != nil {
-		log.Error().Err(err).Msg("读取diffTarGzReader失败")
+		log.Error().Err(err).Msg("Failed to read diffTarGzReader")
 		return err
 	}
 
-	// 解压缩diffTarGzData获取未压缩的数据
+	// Decompress diffTarGzData to get uncompressed data
 	diffTarData, err := utils.DecompressGzipData(diffTarGzData)
 	if err != nil {
-		log.Error().Err(err).Msg("解压缩diffTar数据失败")
+		log.Error().Err(err).Msg("Failed to decompress diffTar data")
 		return err
 	}
 
-	// 计算未压缩 diff.tar 的 SHA256 用作 diffID
+	// Calculate SHA256 of uncompressed diff.tar to use as diffID
 	diffSha256sum, err := utils.CalculateDataSHA256(diffTarData)
 	if err != nil {
-		log.Error().Err(err).Msg("计算diff.tar SHA256失败")
+		log.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
 		return err
 	}
 
-	// 创建临时文件用于上传
+	// Create temporary file for upload
 	tmpFile, err := os.CreateTemp("", "diff.tar.gz")
 	if err != nil {
-		log.Error().Err(err).Msg("创建临时文件失败")
+		log.Error().Err(err).Msg("Failed to create temporary file")
 		return err
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	// 直接将压缩的diffTarData写入临时文件
+	// Write the compressed diffTarData directly to the temporary file
 	if _, err := tmpFile.Write(diffTarGzData); err != nil {
-		log.Error().Err(err).Msg("写入临时文件失败")
+		log.Error().Err(err).Msg("Failed to write to temporary file")
 		return err
 	}
 
-	// 如果需要重新定位文件指针到开始位置
+	// If we need to reposition the file pointer to the beginning
 	if _, err := tmpFile.Seek(0, 0); err != nil {
-		log.Error().Err(err).Msg("重置文件指针失败")
+		log.Error().Err(err).Msg("Failed to reset file pointer")
 		return err
 	}
 
-	// 获取压缩文件信息
+	// Get compressed file information
 	fileSize := params.DiffTarLen
 
-	// 重新打开文件用于上传
+	// Reopen the file for upload
 	file, err := os.Open(tmpFile.Name())
 	if err != nil {
-		log.Error().Err(err).Msg("重新打开临时文件失败")
+		log.Error().Err(err).Msg("Failed to reopen temporary file")
 		return err
 	}
 	defer file.Close()
 
-	// 计算压缩文件的SHA256
+	// Calculate SHA256 of the compressed file
 	sha256sum, err := utils.CalculateFileSHA256(tmpFile.Name())
 	if err != nil {
-		log.Error().Err(err).Msg("计算压缩文件SHA256失败")
+		log.Error().Err(err).Msg("Failed to calculate compressed file SHA256")
 		return err
 	}
 
-	// 上传 layer 到目标镜像仓库
+	// Upload layer to target image registry
 	err = registry.UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
 		return err
 	}
 
-	log.Info().Msg("文件上传完成")
+	log.Info().Msg("File upload completed")
 
-	// 声明 updatedConfig 变量
+	// Declare updatedConfig variable
 	var updatedConfig []byte
 
-	// 确定基础镜像标签
+	// Determine base image tag
 	baseImageTag := "latest"
 	if params.BaseImageTag != "" {
 		baseImageTag = params.BaseImageTag
 	}
 
-	// 获取基础镜像配置信息
+	// Get base image configuration information
 	baseConfig, err := registry.GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
-		log.Error().Err(err).Msg("获取config失败")
+		log.Error().Err(err).Msg("Failed to get config")
 		return err
 	}
 
-	log.Info().Int("configSize", len(baseConfig)).Msg("获取config成功")
-	log.Debug().RawJSON("config", baseConfig).Msg("config内容")
+	log.Info().Int("configSize", len(baseConfig)).Msg("Successfully obtained config")
+	log.Debug().RawJSON("config", baseConfig).Msg("Config content")
 
-	// 调用 UpdateOCIConfig 更新config，使用 diff.tar 的 sha256 作为 diffID
+	// Call UpdateOCIConfig to update config, using diff.tar's sha256 as diffID
 	updatedConfig, err = manifest.UpdateOCIConfig(baseConfig, "sha256:"+diffSha256sum)
 	if err != nil {
-		log.Error().Err(err).Msg("更新config失败")
+		log.Error().Err(err).Msg("Failed to update config")
 		return err
 	}
 
-	log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("更新config成功")
-	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
+	log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("Successfully updated config")
+	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("Updated config content")
 
-	// 上传更新后的配置
+	// Upload the updated config
 	err = config.UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
-		log.Error().Err(err).Msg("上传更新后的config失败")
+		log.Error().Err(err).Msg("Failed to upload updated config")
 		return err
 	}
 
-	log.Info().Msg("上传更新后的config成功")
+	log.Info().Msg("Successfully uploaded updated config")
 
-	// 确定基础镜像标签
+	// Determine base image tag
 	baseImageTag = "latest"
 	if params.BaseImageTag != "" {
 		baseImageTag = params.BaseImageTag
 	}
 
-	// 获取基础镜像manifest示例
+	// Get base image manifest example
 	manifestData, contentType, err := registry.GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
-		log.Error().Err(err).Msg("获取manifest失败")
+		log.Error().Err(err).Msg("Failed to get manifest")
 		return err
 	}
 
-	log.Info().Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("获取manifest成功")
-	// 如果需要查看manifest内容，可以取消下面的注释
-	log.Debug().RawJSON("manifest", manifestData).Msg("manifest内容")
+	log.Info().Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Successfully obtained manifest")
+	// If you need to view the manifest content, you can uncomment the following line
+	log.Debug().RawJSON("manifest", manifestData).Msg("Manifest content")
 
-	// 计算更新后配置的SHA256摘要
+	// Calculate SHA256 digest of the updated config
 	configSHA256, err := utils.CalculateDataSHA256(updatedConfig)
 	if err != nil {
-		log.Error().Err(err).Msg("计算配置SHA256失败")
+		log.Error().Err(err).Msg("Failed to calculate config SHA256")
 		return err
 	}
 	configDigest := "sha256:" + configSHA256
 
-	// 更新 manifest 中的配置引用
+	// Update config reference in manifest
 	var manifestDataObj map[string]any
 	if err := json.Unmarshal(manifestData, &manifestDataObj); err != nil {
-		log.Error().Err(err).Msg("解析manifest失败")
+		log.Error().Err(err).Msg("Failed to parse manifest")
 		return err
 	}
 
 	if configSection, ok := manifestDataObj["config"].(map[string]any); ok {
 		configSection["digest"] = configDigest
-		// 重新计算配置大小
+		// Recalculate config size
 		configSection["size"] = len(updatedConfig)
 	}
 
-	// 重新序列化 manifest
+	// Reserialize manifest
 	updatedManifestWithNewConfig, err := json.Marshal(manifestDataObj)
 	if err != nil {
-		log.Error().Err(err).Msg("序列化更新后的manifest失败")
+		log.Error().Err(err).Msg("Failed to serialize updated manifest")
 		return err
 	}
 
-	// 调用 updateOCIManifest 更新manifest
+	// Call updateOCIManifest to update manifest
 	updatedManifest, err := manifest.UpdateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
 	if err != nil {
-		log.Error().Err(err).Msg("更新manifest失败")
+		log.Error().Err(err).Msg("Failed to update manifest")
 		return err
 	}
 
-	log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("更新manifest成功")
-	log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的manifest内容")
+	log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("Successfully updated manifest")
+	log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
-	// 确定目标镜像标签
+	// Determine target image tag
 	targetImageTag := "latest"
 	if params.TargetImageTag != "" {
 		targetImageTag = params.TargetImageTag
 	}
 
-	// 上传更新后的manifest到目标仓库
+	// Upload the updated manifest to the target registry
 	client := registry.NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
 	err = client.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
-		log.Error().Err(err).Msg("上传更新后的manifest失败")
+		log.Error().Err(err).Msg("Failed to upload updated manifest")
 		return err
 	}
 
-	log.Info().Msg("上传更新后的manifest成功")
+	log.Info().Msg("Successfully uploaded updated manifest")
 	return nil
 }

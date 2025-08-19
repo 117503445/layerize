@@ -8,42 +8,42 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// ValidateBuiltImage 验证构建的镜像是否正确
+// ValidateBuiltImage validates if the built image is correct
 func ValidateBuiltImage(content string) error {
-	// 添加 podman 测试
+	// Add podman test
 	// podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run -it --rm --entrypoint sh registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357
-	// 要求存在 new.txt，且内容是 content。old.txt 需要不存在
+	// Require new.txt to exist with content as content. old.txt should not exist.
 	cmd := exec.Command("sh", "-c", "podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run --rm --entrypoint cat registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 /new.txt")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Error().Err(err).Str("output", string(output)).Msg("执行 podman pull 和 cat new.txt 失败")
-		return fmt.Errorf("执行 podman pull 和 cat new.txt 失败: %w", err)
+		log.Error().Err(err).Str("output", string(output)).Msg("Failed to execute podman pull and cat new.txt")
+		return fmt.Errorf("failed to execute podman pull and cat new.txt: %w", err)
 	}
 
-	// 只获取最后一行作为文件内容，忽略可能的容器ID等信息
+	// Only get the last line as file content, ignoring possible container ID and other information
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	lastLine := lines[len(lines)-1]
 
 	if lastLine != content {
-		log.Error().Str("expected", content).Str("actual", lastLine).Msg("new.txt 内容不匹配")
-		return fmt.Errorf("new.txt 内容不匹配: 期望 %s, 实际 %s", content, lastLine)
+		log.Error().Str("expected", content).Str("actual", lastLine).Msg("new.txt content mismatch")
+		return fmt.Errorf("new.txt content mismatch: expected %s, actual %s", content, lastLine)
 	}
 
-	log.Info().Str("content", content).Msg("验证 new.txt 内容成功")
+	log.Info().Str("content", content).Msg("Successfully validated new.txt content")
 
-	// 检查 old.txt 是否不存在
+	// Check if old.txt does not exist
 	cmd = exec.Command("sh", "-c", "podman run --rm --entrypoint ls registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
-		log.Error().Err(err).Str("output", string(output)).Msg("执行 podman run ls 失败")
-		return fmt.Errorf("执行 podman run ls 失败: %w", err)
+		log.Error().Err(err).Str("output", string(output)).Msg("Failed to execute podman run ls")
+		return fmt.Errorf("failed to execute podman run ls: %w", err)
 	}
 
 	if strings.Contains(string(output), "old.txt") {
-		log.Error().Str("output", string(output)).Msg("old.txt 应该不存在但被找到了")
-		return fmt.Errorf("old.txt 应该不存在但被找到了")
+		log.Error().Str("output", string(output)).Msg("old.txt should not exist but was found")
+		return fmt.Errorf("old.txt should not exist but was found")
 	}
 
-	log.Info().Msg("验证 old.txt 不存在成功")
+	log.Info().Msg("Successfully validated old.txt does not exist")
 	return nil
 }

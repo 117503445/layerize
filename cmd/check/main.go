@@ -42,14 +42,14 @@ func main() {
         Str("phase", "inspect").
         Int("step", 0).
         Str("image_path", imagePath).
-        Msg("开始校验本地 OCI 镜像目录")
+        Msg("Start validating local OCI image directory")
 	
     // Step 1: Check if image directory exists
 	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
 		logger.Error().Str("path", imagePath).Msg("OCI image directory does not exist")
 		os.Exit(1)
 	}
-    logger.Info().Str("phase", "inspect").Int("step", 1).Str("path", imagePath).Msg("已确认镜像目录存在")
+    logger.Info().Str("phase", "inspect").Int("step", 1).Str("path", imagePath).Msg("Confirmed image directory exists")
 
     // Step 2: Check oci-layout file
 	ociLayoutPath := filepath.Join(imagePath, "oci-layout")
@@ -70,7 +70,7 @@ func main() {
         Int("step", 2).
         Str("path", ociLayoutPath).
         Str("imageLayoutVersion", ociLayout.ImageLayoutVersion).
-        Msg("已读取 oci-layout（镜像布局描述）")
+        Msg("Read oci-layout (image layout description)")
 
     // Step 3: Check index.json file
 	indexJSONPath := filepath.Join(imagePath, "index.json")
@@ -100,7 +100,7 @@ func main() {
         Str("path", indexJSONPath).
         Int("schemaVersion", index.SchemaVersion).
         Int("manifestsCount", len(index.Manifests)).
-        Msg("已解析 index.json（索引文件）")
+        Msg("Parsed index.json (index file)")
 
     // Step 4: Check manifest file
 	if len(index.Manifests) == 0 {
@@ -138,7 +138,7 @@ func main() {
         Str("configDigest", manifest.Config.Digest).
         Int("configSize", manifest.Config.Size).
         Int("layersCount", len(manifest.Layers)).
-        Msg("已解析 manifest（镜像清单）")
+        Msg("Parsed manifest (image manifest)")
 
     // Step 5: Check config file
 	configDigest := manifest.Config.Digest
@@ -167,7 +167,7 @@ func main() {
         Str("path", configPath).
         Str("configDigest", configDigest).
         Int("configSize", len(configData)).
-        Msg("已校验 config（镜像配置文件）")
+        Msg("Validated config (image config file)")
 
     // Step 6: Check layer files
 	for i, layer := range manifest.Layers {
@@ -208,8 +208,8 @@ func main() {
             Str("mediaType", layer.MediaType).
             Str("digest", layer.Digest).
             Int("size", len(layerData)).
-            Msg("已校验层（Layer）文件")
+            Msg("Validated layer file")
 	}
 
-    logger.Info().Str("phase", "inspect").Int("step", 7).Msg("OCI 镜像本地检查完成")
+    logger.Info().Str("phase", "inspect").Int("step", 7).Msg("OCI image local validation completed")
 }

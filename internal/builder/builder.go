@@ -70,7 +70,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
         Str("base_tag", params.BaseImageTag).
         Str("target_tag", params.TargetImageTag).
         Int64("diff_tar_gz_len", params.DiffTarLen).
-        Msg("开始镜像构建流程")
+        Msg("Start image building process")
 
 	// Create centralized registry clients for token reuse
 	registryURL := "https://registry.cn-hangzhou.aliyuncs.com"
@@ -84,7 +84,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		logger.Error().Err(err).Msg("Failed to read diffTarGzReader")
 		return err
 	}
-    logger.Info().Str("phase", "build").Int("step", 1).Int("gz_size", len(diffTarGzData)).Msg("已读取差异层压缩数据")
+    logger.Info().Str("phase", "build").Int("step", 1).Int("gz_size", len(diffTarGzData)).Msg("Read compressed differential layer data")
 
 	// Decompress diffTarGzData to get uncompressed data
     diffTarData, err := utils.DecompressGzipData(ctx, diffTarGzData)
@@ -92,7 +92,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		logger.Error().Err(err).Msg("Failed to decompress diffTar data")
 		return err
 	}
-    logger.Info().Str("phase", "build").Int("step", 2).Int("tar_size", len(diffTarData)).Msg("已解压差异层为 diff.tar 数据")
+    logger.Info().Str("phase", "build").Int("step", 2).Int("tar_size", len(diffTarData)).Msg("Decompressed differential layer to diff.tar data")
 
 	// Calculate SHA256 of uncompressed diff.tar to use as diffID
     diffSha256sum, err := utils.CalculateDataSHA256(ctx, diffTarData)
@@ -100,7 +100,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		logger.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
 		return err
 	}
-    logger.Info().Str("phase", "build").Int("step", 3).Str("diff_id", "sha256:"+diffSha256sum).Msg("已计算 diff.tar 的 SHA256（diffID）")
+    logger.Info().Str("phase", "build").Int("step", 3).Str("diff_id", "sha256:"+diffSha256sum).Msg("Calculated SHA256 of diff.tar (diffID)")
 
 	// Create temporary file for upload
     tmpFile, err := os.CreateTemp("", "diff.tar.gz")
@@ -116,7 +116,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		logger.Error().Err(err).Msg("Failed to write to temporary file")
 		return err
 	}
-    logger.Info().Str("phase", "build").Int("step", 4).Str("tmp_file", tmpFile.Name()).Int("bytes_written", len(diffTarGzData)).Msg("已写入压缩层到临时文件")
+    logger.Info().Str("phase", "build").Int("step", 4).Str("tmp_file", tmpFile.Name()).Int("bytes_written", len(diffTarGzData)).Msg("Written compressed layer to temporary file")
 
 	// If we need to reposition the file pointer to the beginning
 	if _, err := tmpFile.Seek(0, 0); err != nil {
@@ -126,7 +126,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 
 	// Get compressed file information
     fileSize := params.DiffTarLen
-    logger.Info().Str("phase", "build").Int("step", 5).Int64("compressed_size", fileSize).Msg("获取压缩层大小")
+    logger.Info().Str("phase", "build").Int("step", 5).Int64("compressed_size", fileSize).Msg("Get compressed layer size")
 
 	// Reopen the file for upload
 	file, err := os.Open(tmpFile.Name())
@@ -142,7 +142,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		logger.Error().Err(err).Msg("Failed to calculate compressed file SHA256")
 		return err
 	}
-    logger.Info().Str("phase", "build").Int("step", 6).Str("layer_digest", "sha256:"+sha256sum).Msg("已计算压缩层 SHA256")
+    logger.Info().Str("phase", "build").Int("step", 6).Str("layer_digest", "sha256:"+sha256sum).Msg("Calculated compressed layer SHA256")
 
 	// Upload layer to target image registry using centralized client
     err = registry.UploadLayerWithClient(targetClient, file, sha256sum, params.TargetImage)
@@ -151,7 +151,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 7).Msg("已上传压缩层到目标镜像仓库")
+    logger.Info().Str("phase", "build").Int("step", 7).Msg("Uploaded compressed layer to target image registry")
 
 	// Declare updatedConfig variable
 	var updatedConfig []byte
@@ -169,8 +169,8 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 8).Int("configSize", len(baseConfig)).Msg("已获取基础镜像配置（config）")
-    logger.Debug().RawJSON("config", baseConfig).Msg("基础镜像配置内容")
+    logger.Info().Str("phase", "build").Int("step", 8).Int("configSize", len(baseConfig)).Msg("Obtained base image config")
+    logger.Debug().RawJSON("config", baseConfig).Msg("Base image config content")
 
 	// Call UpdateOCIConfig to update config, using diff.tar's sha256 as diffID
     updatedConfig, err = manifest.UpdateOCIConfig(ctx, baseConfig, "sha256:"+diffSha256sum)
@@ -179,8 +179,8 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 9).Int("updatedConfigSize", len(updatedConfig)).Msg("已更新基础镜像配置，加入新层 diffID")
-    logger.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的配置内容")
+    logger.Info().Str("phase", "build").Int("step", 9).Int("updatedConfigSize", len(updatedConfig)).Msg("Updated base image config, added new layer diffID")
+    logger.Debug().RawJSON("updatedConfig", updatedConfig).Msg("Updated config content")
 
 	// Upload the updated config using centralized client
 	// Calculate SHA256 digest of the updated config (for upload)
@@ -197,7 +197,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 10).Str("config_digest", uploadConfigDigest).Msg("已上传更新后的配置")
+    logger.Info().Str("phase", "build").Int("step", 10).Str("config_digest", uploadConfigDigest).Msg("Uploaded updated config")
 
 	// Determine base image tag
 	baseImageTag = "latest"
@@ -212,8 +212,8 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 11).Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("已获取基础镜像 manifest")
-    logger.Debug().RawJSON("manifest", manifestData).Msg("基础镜像 manifest 内容")
+    logger.Info().Str("phase", "build").Int("step", 11).Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Obtained base image manifest")
+    logger.Debug().RawJSON("manifest", manifestData).Msg("Base image manifest content")
 
 	// Calculate SHA256 digest of the updated config
     configSHA256, err := utils.CalculateDataSHA256(ctx, updatedConfig)
@@ -250,8 +250,8 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 12).Int("updatedManifestSize", len(updatedManifest)).Msg("已更新 manifest，指向新 config 与 layer")
-    logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("更新后的 manifest 内容")
+    logger.Info().Str("phase", "build").Int("step", 12).Int("updatedManifestSize", len(updatedManifest)).Msg("Updated manifest, pointing to new config and layer")
+    logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
 	// Determine target image tag
 	targetImageTag := "latest"
@@ -266,6 +266,6 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 13).Str("repository", params.TargetImage).Str("reference", targetImageTag).Msg("已上传更新后的 manifest 到目标仓库")
+    logger.Info().Str("phase", "build").Int("step", 13).Str("repository", params.TargetImage).Str("reference", targetImageTag).Msg("Uploaded updated manifest to target registry")
 	return nil
 }

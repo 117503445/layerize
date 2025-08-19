@@ -14,7 +14,7 @@ import (
 // UploadLayerToRegistryWithAuth uploads layer to registry with authentication
 func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
 	logger := log.Ctx(ctx)
-	
+
 	// Ensure registryURL does not end with /
 	registryURL = strings.TrimSuffix(registryURL, "/")
 
@@ -37,7 +37,8 @@ func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256
 		}
 		resp.Body.Close()
 
-		if resp.StatusCode == http.StatusUnauthorized {
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
 			wwwAuth := resp.Header.Get("WWW-Authenticate")
 			if strings.HasPrefix(wwwAuth, "Bearer") {
 				// Use Bearer token authentication
@@ -51,14 +52,14 @@ func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256
 				// Use basic authentication
 				return uploadLayerWithBasicAuth(ctx, client, reader, sha256sum, registryURL, repository, username, password)
 			}
-		} else if resp.StatusCode == http.StatusAccepted {
+		case http.StatusAccepted:
 			// No authentication required, upload directly
 			location := resp.Header.Get("Location")
 			if location == "" {
 				return fmt.Errorf("failed to get Location header")
 			}
-			return continueUpload(ctx, client, reader, sha256sum, registryURL, repository, location)
-		} else {
+			return continueUpload(ctx, client, reader, sha256sum, registryURL, location)
+		default:
 			return fmt.Errorf("POST request returned unexpected status code: %d", resp.StatusCode)
 		}
 	}
@@ -92,13 +93,13 @@ func uploadLayerWithToken(ctx context.Context, client *http.Client, reader io.Re
 		return fmt.Errorf("failed to get Location header")
 	}
 
-	return continueUploadWithToken(ctx, client, reader, sha256sum, registryURL, repository, location, token)
+	return continueUploadWithToken(ctx, client, reader, sha256sum, registryURL, location, token)
 }
 
 // continueUploadWithToken continues upload using token authentication
-func continueUploadWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string, token string) error {
+func continueUploadWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, location string, token string) error {
 	logger := log.Ctx(ctx)
-	
+
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -164,13 +165,13 @@ func uploadLayerWithBasicAuth(ctx context.Context, client *http.Client, reader i
 		return fmt.Errorf("failed to get Location header")
 	}
 
-	return continueUpload(ctx, client, reader, sha256sum, registryURL, repository, location)
+	return continueUpload(ctx, client, reader, sha256sum, registryURL, location)
 }
 
 // continueUpload continues upload without authentication
-func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string) error {
+func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, location string) error {
 	logger := log.Ctx(ctx)
-	
+
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {

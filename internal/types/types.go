@@ -16,6 +16,10 @@ type BuildImageParams struct {
 	BaseImageAuth   Auth
 	DiffTarGzReader io.Reader
 	DiffTarLen      int64
+    // DiffTarSHA256 is the SHA256 of the uncompressed diff.tar (diffID without the sha256: prefix)
+    DiffTarSHA256   string
+    // DiffTarGzSHA256 is the SHA256 of the compressed diff.tar.gz blob (without the sha256: prefix)
+    DiffTarGzSHA256 string
 	TargetImage     string
 	TargetAuth      Auth
 	BaseImageTag    string

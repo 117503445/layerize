@@ -1,20 +1,18 @@
 package builder
 
 import (
-	"bytes"
-	"compress/gzip"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"os"
+    "bytes"
+    "compress/gzip"
+    "context"
+    "encoding/json"
+    "fmt"
 
-	"github.com/117503445/goutils"
-	"github.com/117503445/layerize/internal/manifest"
-	"github.com/117503445/layerize/internal/registry"
-	"github.com/117503445/layerize/internal/types"
-	"github.com/117503445/layerize/internal/utils"
-	"github.com/rs/zerolog/log"
+    "github.com/117503445/goutils"
+    "github.com/117503445/layerize/internal/manifest"
+    "github.com/117503445/layerize/internal/registry"
+    "github.com/117503445/layerize/internal/types"
+    "github.com/117503445/layerize/internal/utils"
+    "github.com/rs/zerolog/log"
 )
 
 // BuildImageFromMap creates a tar from file mapping, compresses it to tar.gz, and then builds an image
@@ -28,7 +26,7 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 		return fmt.Errorf("failed to create tar data: %w", err)
 	}
 
-	// Compress to tar.gz format
+    // Compress to tar.gz format
 	var gzData bytes.Buffer
 	gzWriter := gzip.NewWriter(&gzData)
 	if _, err := gzWriter.Write(tarData); err != nil {
@@ -40,12 +38,26 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 		return fmt.Errorf("failed to close gzip writer: %w", err)
 	}
 
+    // Calculate hashes for both uncompressed and compressed data
+    diffTarSHA256, err := utils.CalculateDataSHA256(ctx, tarData)
+    if err != nil {
+        logger.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
+        return err
+    }
+    diffTarGzSHA256, err := utils.CalculateDataSHA256(ctx, gzData.Bytes())
+    if err != nil {
+        logger.Error().Err(err).Msg("Failed to calculate diff.tar.gz SHA256")
+        return err
+    }
+
 	// Call BuildImage
 	params := types.BuildImageParams{
 		BaseImageName:   baseImageName,
 		BaseImageAuth:   baseImageAuth,
 		DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
 		DiffTarLen:      int64(gzData.Len()),
+        DiffTarSHA256:   diffTarSHA256,
+        DiffTarGzSHA256: diffTarGzSHA256,
 		TargetImage:     targetImage,
 		TargetAuth:      targetAuth,
 		BaseImageTag:    baseImageTag,
@@ -78,80 +90,18 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// baseClient for future use if needed for base image operations with different credentials
 	_ = registry.NewClient(registryURL, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 
-	// Get the content of diff.tar
-    diffTarGzData, err := io.ReadAll(params.DiffTarGzReader)
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to read diffTarGzReader")
-		return err
-	}
-    logger.Info().Str("phase", "build").Int("step", 1).Int("gz_size", len(diffTarGzData)).Msg("Read compressed differential layer data")
-
-	// Decompress diffTarGzData to get uncompressed data
-    diffTarData, err := utils.DecompressGzipData(ctx, diffTarGzData)
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to decompress diffTar data")
-		return err
-	}
-    logger.Info().Str("phase", "build").Int("step", 2).Int("tar_size", len(diffTarData)).Msg("Decompressed differential layer to diff.tar data")
-
-	// Calculate SHA256 of uncompressed diff.tar to use as diffID
-    diffSha256sum, err := utils.CalculateDataSHA256(ctx, diffTarData)
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
-		return err
-	}
-    logger.Info().Str("phase", "build").Int("step", 3).Str("diff_id", "sha256:"+diffSha256sum).Msg("Calculated SHA256 of diff.tar (diffID)")
-
-	// Create temporary file for upload
-    tmpFile, err := os.CreateTemp("", "diff.tar.gz")
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to create temporary file")
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	// Write the compressed diffTarData directly to the temporary file
-    if _, err := tmpFile.Write(diffTarGzData); err != nil {
-		logger.Error().Err(err).Msg("Failed to write to temporary file")
-		return err
-	}
-    logger.Info().Str("phase", "build").Int("step", 4).Str("tmp_file", tmpFile.Name()).Int("bytes_written", len(diffTarGzData)).Msg("Written compressed layer to temporary file")
-
-	// If we need to reposition the file pointer to the beginning
-	if _, err := tmpFile.Seek(0, 0); err != nil {
-		logger.Error().Err(err).Msg("Failed to reset file pointer")
-		return err
-	}
-
-	// Get compressed file information
+    // Use provided digests and size without decompressing or temp files
     fileSize := params.DiffTarLen
-    logger.Info().Str("phase", "build").Int("step", 5).Int64("compressed_size", fileSize).Msg("Get compressed layer size")
+    logger.Info().Str("phase", "build").Int("step", 1).Int64("compressed_size", fileSize).Msg("Using provided compressed layer size")
 
-	// Reopen the file for upload
-	file, err := os.Open(tmpFile.Name())
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to reopen temporary file")
-		return err
-	}
-	defer file.Close()
-
-	// Calculate SHA256 of the compressed file
-    sha256sum, err := utils.CalculateFileSHA256(ctx, tmpFile.Name())
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to calculate compressed file SHA256")
-		return err
-	}
-    logger.Info().Str("phase", "build").Int("step", 6).Str("layer_digest", "sha256:"+sha256sum).Msg("Calculated compressed layer SHA256")
-
-	// Upload layer to target image registry using centralized client
-    err = registry.UploadLayerWithClient(targetClient, file, sha256sum, params.TargetImage)
+    // Upload layer to target image registry using centralized client (streaming reader)
+    err := registry.UploadLayerWithClient(targetClient, params.DiffTarGzReader, params.DiffTarGzSHA256, params.TargetImage)
 	if err != nil {
 		logger.Error().Err(err).Msg("UploadLayerWithClient failed")
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 7).Msg("Uploaded compressed layer to target image registry")
+    logger.Info().Str("phase", "build").Int("step", 2).Msg("Uploaded compressed layer to target image registry")
 
 	// Declare updatedConfig variable
 	var updatedConfig []byte
@@ -172,8 +122,8 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
     logger.Info().Str("phase", "build").Int("step", 8).Int("configSize", len(baseConfig)).Msg("Obtained base image config")
     logger.Debug().RawJSON("config", baseConfig).Msg("Base image config content")
 
-	// Call UpdateOCIConfig to update config, using diff.tar's sha256 as diffID
-    updatedConfig, err = manifest.UpdateOCIConfig(ctx, baseConfig, "sha256:"+diffSha256sum)
+    // Call UpdateOCIConfig to update config, using provided diff.tar sha256 as diffID
+    updatedConfig, err = manifest.UpdateOCIConfig(ctx, baseConfig, "sha256:"+params.DiffTarSHA256)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to update config")
 		return err
@@ -243,8 +193,8 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-	// Call updateOCIManifest to update manifest
-    updatedManifest, err := manifest.UpdateOCIManifest(ctx, updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
+    // Call updateOCIManifest to update manifest using provided compressed blob digest
+    updatedManifest, err := manifest.UpdateOCIManifest(ctx, updatedManifestWithNewConfig, "sha256:"+params.DiffTarGzSHA256, fileSize, "")
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to update manifest")
 		return err

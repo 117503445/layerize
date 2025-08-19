@@ -17,13 +17,14 @@ func TestCalculateFileSHA256(t *testing.T) {
 
 	// Test using existing ./tmp/diff.tar.gz file
 	ctx := context.Background()
+	logger := log.Ctx(ctx)
 	hash, err := utils.CalculateFileSHA256(ctx, "./tmp/diff.tar.gz")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
 	// Verify hash is not empty and has correct length (SHA256 should be 64 characters)
 	assert.Len(t, hash, 64)
-	log.Info().Str("hash", hash).Msg("CalculateFileSHA256")
+	logger.Info().Str("hash", hash).Msg("CalculateFileSHA256")
 
 	// Create a temporary file for testing
 	content := "Hello, World!"

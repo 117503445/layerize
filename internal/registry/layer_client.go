@@ -13,9 +13,10 @@ import (
 // UploadLayerWithClient uploads layer using the centralized client with token management
 func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, repository string) error {
 	ctx := context.Background()
+	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 	
-	log.Info().
+	logger.Info().
 		Str("repository", repository).
 		Str("scope", scope).
 		Str("layer_sha256", sha256sum).
@@ -60,7 +61,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 		return fmt.Errorf("failed to get Location header from upload initiation")
 	}
 
-	log.Debug().Str("upload_location", location).Msg("Layer upload initiated successfully")
+	logger.Debug().Str("upload_location", location).Msg("Layer upload initiated successfully")
 
 	// Step 2: Upload the layer data
 	var finalUploadURL string
@@ -78,7 +79,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 		finalUploadURL += "?digest=" + digest
 	}
 
-	log.Debug().Str("final_upload_url", finalUploadURL).Msg("Uploading layer data")
+	logger.Debug().Str("final_upload_url", finalUploadURL).Msg("Uploading layer data")
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT", finalUploadURL, reader)
 	if err != nil {
@@ -104,7 +105,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 
 	if putResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(putResp.Body)
-		log.Error().
+		logger.Error().
 			Int("status_code", putResp.StatusCode).
 			Str("response_body", string(body)).
 			Str("upload_url", finalUploadURL).
@@ -116,7 +117,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 		return fmt.Errorf("layer upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}
 
-	log.Info().
+	logger.Info().
 		Str("repository", repository).
 		Str("digest", digest).
 		Msg("Layer upload successful using centralized client")

@@ -19,10 +19,12 @@ import (
 
 // BuildImageFromMap creates a tar from file mapping, compresses it to tar.gz, and then builds an image
 func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
+	logger := log.Ctx(ctx)
+	
 	// Create tar byte array using MapToTar
 	tarData, err := utils.MapToTar(ctx, files)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create tar data")
+		logger.Error().Err(err).Msg("Failed to create tar data")
 		return fmt.Errorf("failed to create tar data: %w", err)
 	}
 
@@ -30,11 +32,11 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 	var gzData bytes.Buffer
 	gzWriter := gzip.NewWriter(&gzData)
 	if _, err := gzWriter.Write(tarData); err != nil {
-		log.Error().Err(err).Msg("Failed to write gzip data")
+		logger.Error().Err(err).Msg("Failed to write gzip data")
 		return fmt.Errorf("failed to write gzip data: %w", err)
 	}
 	if err := gzWriter.Close(); err != nil {
-		log.Error().Err(err).Msg("Failed to close gzip writer")
+		logger.Error().Err(err).Msg("Failed to close gzip writer")
 		return fmt.Errorf("failed to close gzip writer: %w", err)
 	}
 
@@ -57,9 +59,10 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 // Parameters:
 // - params: BuildImageParams struct containing all parameters needed to build the image
 func BuildImage(ctx context.Context, params types.BuildImageParams) error {
+	logger := log.Ctx(ctx)
 	goutils.InitZeroLog()
 
-	log.Info().
+	logger.Info().
 		Str("base_image", params.BaseImageName).
 		Str("target_image", params.TargetImage).
 		Str("base_tag", params.BaseImageTag).
@@ -75,28 +78,28 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Get the content of diff.tar
 	diffTarGzData, err := io.ReadAll(params.DiffTarGzReader)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to read diffTarGzReader")
+		logger.Error().Err(err).Msg("Failed to read diffTarGzReader")
 		return err
 	}
 
 	// Decompress diffTarGzData to get uncompressed data
 	diffTarData, err := utils.DecompressGzipData(ctx, diffTarGzData)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to decompress diffTar data")
+		logger.Error().Err(err).Msg("Failed to decompress diffTar data")
 		return err
 	}
 
 	// Calculate SHA256 of uncompressed diff.tar to use as diffID
 	diffSha256sum, err := utils.CalculateDataSHA256(ctx, diffTarData)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
+		logger.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
 		return err
 	}
 
 	// Create temporary file for upload
 	tmpFile, err := os.CreateTemp("", "diff.tar.gz")
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create temporary file")
+		logger.Error().Err(err).Msg("Failed to create temporary file")
 		return err
 	}
 	defer os.Remove(tmpFile.Name())
@@ -104,13 +107,13 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 
 	// Write the compressed diffTarData directly to the temporary file
 	if _, err := tmpFile.Write(diffTarGzData); err != nil {
-		log.Error().Err(err).Msg("Failed to write to temporary file")
+		logger.Error().Err(err).Msg("Failed to write to temporary file")
 		return err
 	}
 
 	// If we need to reposition the file pointer to the beginning
 	if _, err := tmpFile.Seek(0, 0); err != nil {
-		log.Error().Err(err).Msg("Failed to reset file pointer")
+		logger.Error().Err(err).Msg("Failed to reset file pointer")
 		return err
 	}
 
@@ -120,7 +123,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Reopen the file for upload
 	file, err := os.Open(tmpFile.Name())
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to reopen temporary file")
+		logger.Error().Err(err).Msg("Failed to reopen temporary file")
 		return err
 	}
 	defer file.Close()
@@ -128,18 +131,18 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Calculate SHA256 of the compressed file
 	sha256sum, err := utils.CalculateFileSHA256(ctx, tmpFile.Name())
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to calculate compressed file SHA256")
+		logger.Error().Err(err).Msg("Failed to calculate compressed file SHA256")
 		return err
 	}
 
 	// Upload layer to target image registry using centralized client
 	err = registry.UploadLayerWithClient(targetClient, file, sha256sum, params.TargetImage)
 	if err != nil {
-		log.Error().Err(err).Msg("UploadLayerWithClient failed")
+		logger.Error().Err(err).Msg("UploadLayerWithClient failed")
 		return err
 	}
 
-	log.Info().Msg("File upload completed")
+	logger.Info().Msg("File upload completed")
 
 	// Declare updatedConfig variable
 	var updatedConfig []byte
@@ -153,39 +156,39 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Get base image configuration information
 	baseConfig, err := registry.GetConfigWithAuth(ctx, registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get config")
+		logger.Error().Err(err).Msg("Failed to get config")
 		return err
 	}
 
-	log.Info().Int("configSize", len(baseConfig)).Msg("Successfully obtained config")
-	log.Debug().RawJSON("config", baseConfig).Msg("Config content")
+	logger.Info().Int("configSize", len(baseConfig)).Msg("Successfully obtained config")
+	logger.Debug().RawJSON("config", baseConfig).Msg("Config content")
 
 	// Call UpdateOCIConfig to update config, using diff.tar's sha256 as diffID
 	updatedConfig, err = manifest.UpdateOCIConfig(ctx, baseConfig, "sha256:"+diffSha256sum)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to update config")
+		logger.Error().Err(err).Msg("Failed to update config")
 		return err
 	}
 
-	log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("Successfully updated config")
-	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("Updated config content")
+	logger.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("Successfully updated config")
+	logger.Debug().RawJSON("updatedConfig", updatedConfig).Msg("Updated config content")
 
 	// Upload the updated config using centralized client
 	// Calculate SHA256 digest of the updated config (for upload)
 	uploadConfigSHA256, err := utils.CalculateDataSHA256(ctx, updatedConfig)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to calculate config SHA256 for upload")
+		logger.Error().Err(err).Msg("Failed to calculate config SHA256 for upload")
 		return err
 	}
 	uploadConfigDigest := "sha256:" + uploadConfigSHA256
 	
 	err = registry.UploadConfigWithClient(targetClient, updatedConfig, uploadConfigDigest, params.TargetImage)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to upload updated config")
+		logger.Error().Err(err).Msg("Failed to upload updated config")
 		return err
 	}
 
-	log.Info().Msg("Successfully uploaded updated config")
+	logger.Info().Msg("Successfully uploaded updated config")
 
 	// Determine base image tag
 	baseImageTag = "latest"
@@ -196,18 +199,18 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Get base image manifest example
 	manifestData, contentType, err := registry.GetManifestWithAuth(ctx, registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get manifest")
+		logger.Error().Err(err).Msg("Failed to get manifest")
 		return err
 	}
 
-	log.Info().Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Successfully obtained manifest")
+	logger.Info().Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Successfully obtained manifest")
 	// If you need to view the manifest content, you can uncomment the following line
-	log.Debug().RawJSON("manifest", manifestData).Msg("Manifest content")
+	logger.Debug().RawJSON("manifest", manifestData).Msg("Manifest content")
 
 	// Calculate SHA256 digest of the updated config
 	configSHA256, err := utils.CalculateDataSHA256(ctx, updatedConfig)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to calculate config SHA256")
+		logger.Error().Err(err).Msg("Failed to calculate config SHA256")
 		return err
 	}
 	configDigest := "sha256:" + configSHA256
@@ -215,7 +218,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Update config reference in manifest
 	var manifestDataObj map[string]any
 	if err := json.Unmarshal(manifestData, &manifestDataObj); err != nil {
-		log.Error().Err(err).Msg("Failed to parse manifest")
+		logger.Error().Err(err).Msg("Failed to parse manifest")
 		return err
 	}
 
@@ -228,19 +231,19 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Reserialize manifest
 	updatedManifestWithNewConfig, err := json.Marshal(manifestDataObj)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to serialize updated manifest")
+		logger.Error().Err(err).Msg("Failed to serialize updated manifest")
 		return err
 	}
 
 	// Call updateOCIManifest to update manifest
 	updatedManifest, err := manifest.UpdateOCIManifest(ctx, updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to update manifest")
+		logger.Error().Err(err).Msg("Failed to update manifest")
 		return err
 	}
 
-	log.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("Successfully updated manifest")
-	log.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
+	logger.Info().Int("updatedManifestSize", len(updatedManifest)).Msg("Successfully updated manifest")
+	logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
 	// Determine target image tag
 	targetImageTag := "latest"
@@ -251,10 +254,10 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Upload the updated manifest to the target registry using existing client
 	err = targetClient.UploadManifest(ctx, params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to upload updated manifest")
+		logger.Error().Err(err).Msg("Failed to upload updated manifest")
 		return err
 	}
 
-	log.Info().Msg("Successfully uploaded updated manifest")
+	logger.Info().Msg("Successfully uploaded updated manifest")
 	return nil
 }

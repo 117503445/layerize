@@ -102,7 +102,9 @@ func getConfigWithToken(ctx context.Context, client *http.Client, configURL, tok
 
 // UploadConfigToRegistryWithAuth uploads config to image registry with authentication
 func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, configDigest, registryURL, repository, username, password string) error {
-	log.Info().
+	logger := log.Ctx(ctx)
+	
+	logger.Info().
 		Str("registryURL", registryURL).
 		Str("repository", repository).
 		Str("username", username).
@@ -118,7 +120,7 @@ func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, conf
 	calculatedDigest := fmt.Sprintf("sha256:%x", hash)
 	
 	if configDigest != calculatedDigest {
-		log.Warn().
+		logger.Warn().
 			Str("provided_digest", configDigest).
 			Str("calculated_digest", calculatedDigest).
 			Msg("Config digest mismatch - using calculated digest")
@@ -189,6 +191,8 @@ func uploadConfigWithToken(ctx context.Context, client *http.Client, configData 
 
 // continueConfigUploadWithBasicAuth continues config upload using basic authentication
 func continueConfigUploadWithBasicAuth(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, location, username, password string) error {
+	logger := log.Ctx(ctx)
+	
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -202,7 +206,7 @@ func continueConfigUploadWithBasicAuth(ctx context.Context, client *http.Client,
 		uploadURL += "?digest=" + configDigest
 	}
 
-	log.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
+	logger.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, bytes.NewReader(configData))
 	if err != nil {
@@ -225,12 +229,14 @@ func continueConfigUploadWithBasicAuth(ctx context.Context, client *http.Client,
 		return fmt.Errorf("upload failed, status code: %d, response: %s", resp.StatusCode, string(body))
 	}
 
-	log.Info().Msg("Config upload successful")
+	logger.Info().Msg("Config upload successful")
 	return nil
 }
 
 // continueConfigUploadWithToken continues config upload using token authentication
 func continueConfigUploadWithToken(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, location, token string) error {
+	logger := log.Ctx(ctx)
+	
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -244,7 +250,7 @@ func continueConfigUploadWithToken(ctx context.Context, client *http.Client, con
 		uploadURL += "?digest=" + configDigest
 	}
 
-	log.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
+	logger.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, bytes.NewReader(configData))
 	if err != nil {
@@ -266,6 +272,6 @@ func continueConfigUploadWithToken(ctx context.Context, client *http.Client, con
 		return fmt.Errorf("upload failed, status code: %d, response: %s", resp.StatusCode, string(body))
 	}
 
-	log.Info().Msg("Config upload successful")
+	logger.Info().Msg("Config upload successful")
 	return nil
 }

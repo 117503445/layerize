@@ -15,10 +15,15 @@ import (
 func main() {
 	goutils.InitZeroLog()
 
+	ctx := context.Background()
+	ctx = log.Logger.WithContext(ctx)
+
+	logger := log.Ctx(ctx)
+
 	// Load .env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to load .env file")
+		logger.Error().Err(err).Msg("Failed to load .env file")
 		panic(err)
 	}
 
@@ -26,8 +31,6 @@ func main() {
 	username := os.Getenv("username")
 	password := os.Getenv("password")
 	auth := types.Auth{Username: username, Password: password}
-
-	ctx := context.Background()
 	content := goutils.TimeStrMilliSec()
 
 	// Create file mapping to simulate content in tmp/diff.tar
@@ -36,7 +39,7 @@ func main() {
 		".wh.old.txt": []byte(""),
 	}
 	for i := range 10 {
-		log.Info().Msgf("Building image TestCase %d", i)
+		logger.Info().Msgf("Building image TestCase %d", i)
 
 		// Call buildImageFromMap function to execute build operation
 		err = builder.BuildImageFromMap(
@@ -50,19 +53,19 @@ func main() {
 			"08182357",                     // target image tag
 		)
 		if err != nil {
-			log.Error().Err(err).Msg("buildImageFromMap execution failed")
+			logger.Error().Err(err).Msg("buildImageFromMap execution failed")
 			panic(err)
 		}
 
-		log.Info().Msg("Image build completed")
+		logger.Info().Msg("Image build completed")
 
 		// Validate the built image
 		err = validator.ValidateBuiltImage(ctx, content)
 		if err != nil {
-			log.Error().Err(err).Msg("Image validation failed")
+			logger.Error().Err(err).Msg("Image validation failed")
 			panic(err)
 		}
 
-		log.Info().Msg("Image validation completed")
+		logger.Info().Msg("Image validation completed")
 	}
 }

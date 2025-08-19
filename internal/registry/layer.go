@@ -13,6 +13,8 @@ import (
 
 // UploadLayerToRegistryWithAuth uploads layer to registry with authentication
 func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
+	logger := log.Ctx(ctx)
+	
 	// Ensure registryURL does not end with /
 	registryURL = strings.TrimSuffix(registryURL, "/")
 
@@ -20,7 +22,7 @@ func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256
 
 	// Try to use Bearer token authentication
 	if username != "" && password != "" {
-		log.Info().Str("registryURL", registryURL).Str("repository", repository).Str("username", username).Msg("Attempting to upload layer with username/password")
+		logger.Info().Str("registryURL", registryURL).Str("repository", repository).Str("username", username).Msg("Attempting to upload layer with username/password")
 
 		// First try POST request to see if authentication is required
 		postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
@@ -41,7 +43,7 @@ func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256
 				// Use Bearer token authentication
 				token, err := getTokenFromWWWAuth(ctx, wwwAuth, username, password)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to get token")
+					logger.Error().Err(err).Msg("Failed to get token")
 					return fmt.Errorf("failed to get token: %w", err)
 				}
 				return uploadLayerWithToken(ctx, client, reader, sha256sum, registryURL, repository, token)
@@ -95,6 +97,8 @@ func uploadLayerWithToken(ctx context.Context, client *http.Client, reader io.Re
 
 // continueUploadWithToken continues upload using token authentication
 func continueUploadWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string, token string) error {
+	logger := log.Ctx(ctx)
+	
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -108,7 +112,7 @@ func continueUploadWithToken(ctx context.Context, client *http.Client, reader io
 		uploadURL += "?digest=sha256:" + sha256sum
 	}
 
-	log.Info().Str("uploadURL", uploadURL).Msg("Uploading layer data")
+	logger.Info().Str("uploadURL", uploadURL).Msg("Uploading layer data")
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, reader)
 	if err != nil {
@@ -129,7 +133,7 @@ func continueUploadWithToken(ctx context.Context, client *http.Client, reader io
 		return fmt.Errorf("upload failed, status code: %d, response: %s", resp.StatusCode, string(body))
 	}
 
-	log.Info().Msg("Layer upload successful")
+	logger.Info().Msg("Layer upload successful")
 	return nil
 }
 
@@ -165,6 +169,8 @@ func uploadLayerWithBasicAuth(ctx context.Context, client *http.Client, reader i
 
 // continueUpload continues upload without authentication
 func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string) error {
+	logger := log.Ctx(ctx)
+	
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -178,7 +184,7 @@ func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, 
 		uploadURL += "?digest=sha256:" + sha256sum
 	}
 
-	log.Info().Str("uploadURL", uploadURL).Msg("Uploading layer data")
+	logger.Info().Str("uploadURL", uploadURL).Msg("Uploading layer data")
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, reader)
 	if err != nil {
@@ -198,6 +204,6 @@ func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, 
 		return fmt.Errorf("upload failed, status code: %d, response: %s", resp.StatusCode, string(body))
 	}
 
-	log.Info().Msg("Layer upload successful")
+	logger.Info().Msg("Layer upload successful")
 	return nil
 }

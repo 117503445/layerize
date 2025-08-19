@@ -25,12 +25,13 @@ func DefaultRetryConfig() RetryConfig {
 
 // WithRetry executes a function with retry logic for authentication failures
 func WithRetry(ctx context.Context, operation string, config RetryConfig, fn func() (*http.Response, error)) (*http.Response, error) {
+	logger := log.Ctx(ctx)
 	var lastErr error
 	
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * config.BaseDelay
-			log.Info().
+			logger.Info().
 				Str("operation", operation).
 				Int("attempt", attempt).
 				Dur("delay", delay).
@@ -43,19 +44,19 @@ func WithRetry(ctx context.Context, operation string, config RetryConfig, fn fun
 			}
 		}
 		
-		log.Debug().
-			Str("operation", operation).
-			Int("attempt", attempt).
-			Msg("Executing operation")
+			logger.Debug().
+		Str("operation", operation).
+		Int("attempt", attempt).
+		Msg("Executing operation")
 		
 		resp, err := fn()
 		if err != nil {
 			lastErr = err
-			log.Warn().
-				Err(err).
-				Str("operation", operation).
-				Int("attempt", attempt).
-				Msg("Operation failed with error")
+					logger.Warn().
+			Err(err).
+			Str("operation", operation).
+			Int("attempt", attempt).
+			Msg("Operation failed with error")
 			continue
 		}
 		
@@ -65,24 +66,24 @@ func WithRetry(ctx context.Context, operation string, config RetryConfig, fn fun
 				resp.Body.Close()
 			}
 			lastErr = fmt.Errorf("authentication failed: %s", resp.Status)
-			log.Warn().
-				Int("status_code", resp.StatusCode).
-				Str("operation", operation).
-				Int("attempt", attempt).
-				Msg("Operation failed with 401 - will retry")
+					logger.Warn().
+			Int("status_code", resp.StatusCode).
+			Str("operation", operation).
+			Int("attempt", attempt).
+			Msg("Operation failed with 401 - will retry")
 			continue
 		}
 		
 		// Success or non-retryable failure
-		log.Debug().
-			Str("operation", operation).
-			Int("attempt", attempt).
-			Int("status_code", resp.StatusCode).
-			Msg("Operation completed")
+			logger.Debug().
+		Str("operation", operation).
+		Int("attempt", attempt).
+		Int("status_code", resp.StatusCode).
+		Msg("Operation completed")
 		return resp, nil
 	}
 	
-	log.Error().
+	logger.Error().
 		Err(lastErr).
 		Str("operation", operation).
 		Int("max_attempts", config.MaxRetries + 1).

@@ -15,9 +15,10 @@ import (
 // UploadConfigWithClient uploads config using the centralized client with token management
 func UploadConfigWithClient(client *Client, configData []byte, configDigest, repository string) error {
 	ctx := context.Background()
+	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 	
-	log.Info().
+	logger.Info().
 		Str("repository", repository).
 		Str("scope", scope).
 		Msg("Starting config upload with centralized client")
@@ -61,7 +62,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 		return fmt.Errorf("failed to get Location header from upload initiation")
 	}
 
-	log.Debug().Str("upload_location", location).Msg("Upload initiated successfully")
+	logger.Debug().Str("upload_location", location).Msg("Upload initiated successfully")
 
 	// Step 2: Upload the config data
 	var finalUploadURL string
@@ -78,7 +79,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 		finalUploadURL += "?digest=" + configDigest
 	}
 
-	log.Debug().Str("final_upload_url", finalUploadURL).Msg("Uploading config data")
+	logger.Debug().Str("final_upload_url", finalUploadURL).Msg("Uploading config data")
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT", finalUploadURL, bytes.NewReader(configData))
 	if err != nil {
@@ -105,7 +106,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 
 	if putResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(putResp.Body)
-		log.Error().
+		logger.Error().
 			Int("status_code", putResp.StatusCode).
 			Str("response_body", string(body)).
 			Str("upload_url", finalUploadURL).
@@ -117,7 +118,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 		return fmt.Errorf("config upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}
 
-	log.Info().
+	logger.Info().
 		Str("repository", repository).
 		Str("digest", configDigest).
 		Msg("Config upload successful using centralized client")

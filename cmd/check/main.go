@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,12 +34,15 @@ type OCIManifest struct {
 
 func main() {
 	goutils.InitZeroLog()
+	
+	ctx := context.Background()
+	logger := log.Ctx(ctx)
 
 	imagePath := "./tmp/diff"
 	
 	// Check if image directory exists
 	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
-		log.Error().Str("path", imagePath).Msg("OCI image directory does not exist")
+		logger.Error().Str("path", imagePath).Msg("OCI image directory does not exist")
 		os.Exit(1)
 	}
 
@@ -46,23 +50,23 @@ func main() {
 	ociLayoutPath := filepath.Join(imagePath, "oci-layout")
 	layoutData, err := os.ReadFile(ociLayoutPath)
 	if err != nil {
-		log.Error().Err(err).Str("path", ociLayoutPath).Msg("Failed to read oci-layout file")
+		logger.Error().Err(err).Str("path", ociLayoutPath).Msg("Failed to read oci-layout file")
 		os.Exit(1)
 	}
 
 	var ociLayout OCIImageLayout
 	if err := json.Unmarshal(layoutData, &ociLayout); err != nil {
-		log.Error().Err(err).Msg("Failed to parse oci-layout file")
+		logger.Error().Err(err).Msg("Failed to parse oci-layout file")
 		os.Exit(1)
 	}
 
-	log.Info().Str("version", ociLayout.ImageLayoutVersion).Msg("OCI image layout version")
+	logger.Info().Str("version", ociLayout.ImageLayoutVersion).Msg("OCI image layout version")
 
 	// Check index.json file
 	indexJSONPath := filepath.Join(imagePath, "index.json")
 	indexData, err := os.ReadFile(indexJSONPath)
 	if err != nil {
-		log.Error().Err(err).Str("path", indexJSONPath).Msg("Failed to read index.json file")
+		logger.Error().Err(err).Str("path", indexJSONPath).Msg("Failed to read index.json file")
 		os.Exit(1)
 	}
 
@@ -76,21 +80,21 @@ func main() {
 	}
 
 	if err := json.Unmarshal(indexData, &index); err != nil {
-		log.Error().Err(err).Msg("Failed to parse index.json file")
+		logger.Error().Err(err).Msg("Failed to parse index.json file")
 		os.Exit(1)
 	}
 
-	log.Info().Int("schemaVersion", index.SchemaVersion).Int("manifestsCount", len(index.Manifests)).Msg("Index file info")
+	logger.Info().Int("schemaVersion", index.SchemaVersion).Int("manifestsCount", len(index.Manifests)).Msg("Index file info")
 
 	// Check manifest file
 	if len(index.Manifests) == 0 {
-		log.Error().Msg("No manifests found in index.json")
+		logger.Error().Msg("No manifests found in index.json")
 		os.Exit(1)
 	}
 
 	manifestDigest := index.Manifests[0].Digest
 	if len(manifestDigest) < 7 || manifestDigest[:7] != "sha256:" {
-		log.Error().Str("digest", manifestDigest).Msg("Invalid manifest digest format")
+		logger.Error().Str("digest", manifestDigest).Msg("Invalid manifest digest format")
 		os.Exit(1)
 	}
 
@@ -99,17 +103,17 @@ func main() {
 	
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
-		log.Error().Err(err).Str("path", manifestPath).Msg("Failed to read manifest file")
+		logger.Error().Err(err).Str("path", manifestPath).Msg("Failed to read manifest file")
 		os.Exit(1)
 	}
 
 	var manifest OCIManifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		log.Error().Err(err).Msg("Failed to parse manifest file")
+		logger.Error().Err(err).Msg("Failed to parse manifest file")
 		os.Exit(1)
 	}
 
-	log.Info().
+	logger.Info().
 		Int("schemaVersion", manifest.SchemaVersion).
 		Str("mediaType", manifest.MediaType).
 		Str("configDigest", manifest.Config.Digest).
@@ -120,7 +124,7 @@ func main() {
 	// Check config file
 	configDigest := manifest.Config.Digest
 	if len(configDigest) < 7 || configDigest[:7] != "sha256:" {
-		log.Error().Str("digest", configDigest).Msg("Invalid config digest format")
+		logger.Error().Str("digest", configDigest).Msg("Invalid config digest format")
 		os.Exit(1)
 	}
 
@@ -128,23 +132,23 @@ func main() {
 	configPath := filepath.Join(imagePath, "blobs", "sha256", configFileName)
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Error().Str("path", configPath).Msg("Config file does not exist")
+		logger.Error().Str("path", configPath).Msg("Config file does not exist")
 		os.Exit(1)
 	}
 
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Error().Err(err).Str("path", configPath).Msg("Failed to read config file")
+		logger.Error().Err(err).Str("path", configPath).Msg("Failed to read config file")
 		os.Exit(1)
 	}
 
-	log.Info().Int("configSize", len(configData)).Msg("Config file checked")
+	logger.Info().Int("configSize", len(configData)).Msg("Config file checked")
 
 	// Check layer files
 	for i, layer := range manifest.Layers {
 		layerDigest := layer.Digest
 		if len(layerDigest) < 7 || layerDigest[:7] != "sha256:" {
-			log.Error().Str("digest", layerDigest).Int("layerIndex", i).Msg("Invalid layer digest format")
+			logger.Error().Str("digest", layerDigest).Int("layerIndex", i).Msg("Invalid layer digest format")
 			os.Exit(1)
 		}
 
@@ -152,18 +156,18 @@ func main() {
 		layerPath := filepath.Join(imagePath, "blobs", "sha256", layerFileName)
 
 		if _, err := os.Stat(layerPath); os.IsNotExist(err) {
-			log.Error().Str("path", layerPath).Int("layerIndex", i).Msg("Layer file does not exist")
+			logger.Error().Str("path", layerPath).Int("layerIndex", i).Msg("Layer file does not exist")
 			os.Exit(1)
 		}
 
 		layerData, err := os.ReadFile(layerPath)
 		if err != nil {
-			log.Error().Err(err).Str("path", layerPath).Int("layerIndex", i).Msg("Failed to read layer file")
+			logger.Error().Err(err).Str("path", layerPath).Int("layerIndex", i).Msg("Failed to read layer file")
 			os.Exit(1)
 		}
 
 		if len(layerData) != layer.Size {
-			log.Error().
+			logger.Error().
 				Int("expectedSize", layer.Size).
 				Int("actualSize", len(layerData)).
 				Int("layerIndex", i).
@@ -171,7 +175,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		log.Info().
+		logger.Info().
 			Int("layerIndex", i).
 			Str("mediaType", layer.MediaType).
 			Str("digest", layer.Digest).
@@ -179,6 +183,6 @@ func main() {
 			Msg("Layer checked")
 	}
 
-	log.Info().Msg("OCI image check completed successfully")
+	logger.Info().Msg("OCI image check completed successfully")
 	fmt.Println("OCI image check completed successfully")
 }

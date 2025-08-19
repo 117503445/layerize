@@ -14,7 +14,7 @@ func ValidateBuiltImage(ctx context.Context, content string) error {
 	logger := log.Ctx(ctx)
 	
     // Add podman test
-    logger.Info().Str("phase", "validate").Int("step", 0).Msg("开始通过 podman 验证构建结果")
+    logger.Info().Str("phase", "validate").Int("step", 0).Msg("Start validating build results via podman")
 	// podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run -it --rm --entrypoint sh registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357
 	// Require new.txt to exist with content as content. old.txt should not exist.
 	cmd := exec.Command("sh", "-c", "podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run --rm --entrypoint cat registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 /new.txt")
@@ -23,7 +23,7 @@ func ValidateBuiltImage(ctx context.Context, content string) error {
         logger.Error().Err(err).Str("phase", "validate").Int("step", 1).Str("output", string(output)).Msg("Failed to execute podman pull and cat new.txt")
 		return fmt.Errorf("failed to execute podman pull and cat new.txt: %w", err)
 	}
-    logger.Info().Str("phase", "validate").Int("step", 1).Msg("已拉取镜像并读取 /new.txt")
+    logger.Info().Str("phase", "validate").Int("step", 1).Msg("Pulled image and read /new.txt")
 
 	// Only get the last line as file content, ignoring possible container ID and other information
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
@@ -34,7 +34,7 @@ func ValidateBuiltImage(ctx context.Context, content string) error {
 		return fmt.Errorf("new.txt content mismatch: expected %s, actual %s", content, lastLine)
 	}
 
-    logger.Info().Str("phase", "validate").Int("step", 2).Str("content", content).Msg("已验证 /new.txt 内容正确")
+    logger.Info().Str("phase", "validate").Int("step", 2).Str("content", content).Msg("Verified /new.txt content is correct")
 
 	// Check if old.txt does not exist
 	cmd = exec.Command("sh", "-c", "podman run --rm --entrypoint ls registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357")
@@ -49,6 +49,6 @@ func ValidateBuiltImage(ctx context.Context, content string) error {
 		return fmt.Errorf("old.txt should not exist but was found")
 	}
 
-    logger.Info().Str("phase", "validate").Int("step", 4).Msg("已验证 /old.txt 不存在")
+    logger.Info().Str("phase", "validate").Int("step", 4).Msg("Verified /old.txt does not exist")
 	return nil
 }

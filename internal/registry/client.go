@@ -32,6 +32,10 @@ type Client struct {
 }
 
 // IsExpired checks if token is expired
+// Parameters:
+// - ctx: context for the operation
+// Returns:
+// - bool: true if token is expired, false otherwise
 func (t *Token) IsExpired(ctx context.Context) bool {
 	logger := log.Ctx(ctx)
 	
@@ -63,6 +67,12 @@ func (t *Token) IsExpired(ctx context.Context) bool {
 }
 
 // NewClient creates a new registry client
+// Parameters:
+// - registryURL: URL of the registry
+// - username: username for authentication
+// - password: password for authentication
+// Returns:
+// - *Client: pointer to the newly created client
 func NewClient(registryURL, username, password string) *Client {
 	return &Client{
 		registryURL: registryURL,
@@ -76,6 +86,12 @@ func NewClient(registryURL, username, password string) *Client {
 }
 
 // getAuthorizationHeader gets authorization header
+// Parameters:
+// - ctx: context for the operation
+// - scope: scope for which to get authorization
+// Returns:
+// - string: authorization header value
+// - error: any error that occurred while getting the authorization header
 func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (string, error) {
 	logger := log.Ctx(ctx)
 	
@@ -117,6 +133,9 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 }
 
 // InvalidateToken removes a token from cache (useful when receiving 401 errors)
+// Parameters:
+// - ctx: context for the operation
+// - scope: scope of the token to invalidate
 func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 	logger := log.Ctx(ctx)
 	
@@ -130,6 +149,12 @@ func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 }
 
 // fetchToken fetches authentication token
+// Parameters:
+// - ctx: context for the operation
+// - scope: scope for which to fetch token
+// Returns:
+// - *Token: pointer to the fetched token
+// - error: any error that occurred while fetching the token
 func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 	logger := log.Ctx(ctx)
 	
@@ -189,6 +214,12 @@ func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 }
 
 // getAuthURL gets authentication URL
+// Parameters:
+// - ctx: context for the operation
+// - scope: scope for which to get auth URL
+// Returns:
+// - string: authentication URL
+// - error: any error that occurred while getting the auth URL
 func (c *Client) getAuthURL(ctx context.Context, scope string) (string, error) {
 	// 尝试访问一个需要认证的端点来获取 WWW-Authenticate 头
 	testURL := c.registryURL + "/v2/"
@@ -239,6 +270,14 @@ func (c *Client) getAuthURL(ctx context.Context, scope string) (string, error) {
 }
 
 // UploadManifest uploads image manifest
+// Parameters:
+// - ctx: context for the operation
+// - repository: repository to upload to
+// - reference: reference (tag or digest) for the manifest
+// - manifest: manifest data to upload
+// - contentType: content type of the manifest
+// Returns:
+// - error: any error that occurred during manifest upload
 func (c *Client) UploadManifest(ctx context.Context, repository, reference string, manifest []byte, contentType string) error {
 	endpoint := fmt.Sprintf("/v2/%s/manifests/%s", repository, reference)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)

@@ -13,6 +13,13 @@ import (
 )
 
 // UploadConfigWithClient uploads config using the centralized client with token management
+// Parameters:
+// - client: registry client to use for upload
+// - configData: config data to upload
+// - configDigest: digest of the config data
+// - repository: repository name
+// Returns:
+// - error: any error that occurred during config upload
 func UploadConfigWithClient(client *Client, configData []byte, configDigest, repository string) error {
 	ctx := context.Background()
 	logger := log.Ctx(ctx)

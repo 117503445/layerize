@@ -13,6 +13,16 @@ import (
 )
 
 // GetConfigWithAuth retrieves image config with authentication
+// Parameters:
+// - ctx: context for the operation
+// - registryURL: URL of the registry
+// - repository: repository name
+// - reference: reference (tag or digest) of the image
+// - username: username for authentication
+// - password: password for authentication
+// Returns:
+// - []byte: image config data
+// - error: any error that occurred while retrieving the config
 func GetConfigWithAuth(ctx context.Context, registryURL, repository, reference, username, password string) ([]byte, error) {
 	// First get the manifest
 	manifest, _, err := GetManifestWithAuth(ctx, registryURL, repository, reference, username, password)
@@ -75,6 +85,14 @@ func GetConfigWithAuth(ctx context.Context, registryURL, repository, reference, 
 }
 
 // getConfigWithToken retrieves config using token authentication
+// Parameters:
+// - ctx: context for the operation
+// - client: HTTP client to use for the request
+// - configURL: URL to retrieve config from
+// - token: authentication token
+// Returns:
+// - []byte: image config data
+// - error: any error that occurred while retrieving the config
 func getConfigWithToken(ctx context.Context, client *http.Client, configURL, token string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", configURL, nil)
 	if err != nil {
@@ -98,6 +116,16 @@ func getConfigWithToken(ctx context.Context, client *http.Client, configURL, tok
 }
 
 // UploadConfigToRegistryWithAuth uploads config to image registry with authentication
+// Parameters:
+// - ctx: context for the operation
+// - configData: config data to upload
+// - configDigest: digest of the config data
+// - registryURL: URL of the registry
+// - repository: repository name
+// - username: username for authentication
+// - password: password for authentication
+// Returns:
+// - error: any error that occurred during config upload
 func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, configDigest, registryURL, repository, username, password string) error {
 	logger := log.Ctx(ctx)
 

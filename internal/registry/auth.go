@@ -15,6 +15,14 @@ import (
 )
 
 // getTokenFromWWWAuth retrieves an authentication token from the WWW-Authenticate header
+// Parameters:
+// - ctx: context for the operation
+// - wwwAuth: WWW-Authenticate header value
+// - username: username for authentication
+// - password: password for authentication
+// Returns:
+// - string: authentication token
+// - error: any error that occurred while retrieving the token
 func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string) (string, error) {
 	logger := log.Ctx(ctx)
 	

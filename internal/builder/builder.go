@@ -16,6 +16,17 @@ import (
 )
 
 // BuildImageFromMap creates a tar from file mapping, compresses it to tar.gz, and then builds an image
+// Parameters:
+// - ctx: context for the operation
+// - files: map of file paths to file content bytes
+// - targetImage: the target image repository name
+// - targetAuth: authentication information for the target registry
+// - baseImageName: the base image repository name
+// - baseImageAuth: authentication information for the base image registry
+// - baseImageTag: tag of the base image
+// - targetImageTag: tag for the target image
+// Returns:
+// - error: any error that occurred during the build process
 func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
 	logger := log.Ctx(ctx)
 	
@@ -69,7 +80,10 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 
 // BuildImage encapsulates the complete image building process
 // Parameters:
+// - ctx: context for the operation
 // - params: BuildImageParams struct containing all parameters needed to build the image
+// Returns:
+// - error: any error that occurred during the build process
 func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	logger := log.Ctx(ctx)
 	goutils.InitZeroLog()

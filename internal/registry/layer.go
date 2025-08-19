@@ -12,6 +12,16 @@ import (
 )
 
 // UploadLayerToRegistryWithAuth uploads layer to registry with authentication
+// Parameters:
+// - ctx: context for the operation
+// - reader: reader for layer data
+// - sha256sum: SHA256 sum of the layer data
+// - registryURL: URL of the registry
+// - repository: repository name
+// - username: username for authentication
+// - password: password for authentication
+// Returns:
+// - error: any error that occurred during layer upload
 func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
 	logger := log.Ctx(ctx)
 
@@ -68,6 +78,16 @@ func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256
 }
 
 // uploadLayerWithToken uploads layer using token authentication
+// Parameters:
+// - ctx: context for the operation
+// - client: HTTP client to use for requests
+// - reader: reader for layer data
+// - sha256sum: SHA256 sum of the layer data
+// - registryURL: URL of the registry
+// - repository: repository name
+// - token: authentication token
+// Returns:
+// - error: any error that occurred during layer upload
 func uploadLayerWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, token string) error {
 	// Start upload
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
@@ -97,6 +117,16 @@ func uploadLayerWithToken(ctx context.Context, client *http.Client, reader io.Re
 }
 
 // continueUploadWithToken continues upload using token authentication
+// Parameters:
+// - ctx: context for the operation
+// - client: HTTP client to use for requests
+// - reader: reader for layer data
+// - sha256sum: SHA256 sum of the layer data
+// - registryURL: URL of the registry
+// - location: upload location URL
+// - token: authentication token
+// Returns:
+// - error: any error that occurred during layer upload
 func continueUploadWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, location string, token string) error {
 	logger := log.Ctx(ctx)
 
@@ -139,6 +169,17 @@ func continueUploadWithToken(ctx context.Context, client *http.Client, reader io
 }
 
 // uploadLayerWithBasicAuth uploads layer using basic authentication
+// Parameters:
+// - ctx: context for the operation
+// - client: HTTP client to use for requests
+// - reader: reader for layer data
+// - sha256sum: SHA256 sum of the layer data
+// - registryURL: URL of the registry
+// - repository: repository name
+// - username: username for authentication
+// - password: password for authentication
+// Returns:
+// - error: any error that occurred during layer upload
 func uploadLayerWithBasicAuth(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
 	// Start upload
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
@@ -169,6 +210,15 @@ func uploadLayerWithBasicAuth(ctx context.Context, client *http.Client, reader i
 }
 
 // continueUpload continues upload without authentication
+// Parameters:
+// - ctx: context for the operation
+// - client: HTTP client to use for requests
+// - reader: reader for layer data
+// - sha256sum: SHA256 sum of the layer data
+// - registryURL: URL of the registry
+// - location: upload location URL
+// Returns:
+// - error: any error that occurred during layer upload
 func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, location string) error {
 	logger := log.Ctx(ctx)
 

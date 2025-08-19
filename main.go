@@ -23,7 +23,7 @@ func main() {
     logger.Info().
         Str("phase", "init").
         Int("step", 0).
-        Msg("启动 Layerize 示例程序")
+        Msg("Starting Layerize sample program")
 
 	// Load .env file
 	err := godotenv.Load()
@@ -31,7 +31,7 @@ func main() {
 		logger.Error().Err(err).Msg("Failed to load .env file")
 		panic(err)
 	}
-    logger.Info().Str("phase", "init").Int("step", 1).Msg("已加载 .env 环境变量")
+    logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
 
 	// Read authentication information from environment variables
 	username := os.Getenv("username")
@@ -51,9 +51,9 @@ func main() {
         Str("target_tag", "08182357").
         Str("base_image", "117503445/layerize-test-base").
         Str("base_tag", "latest").
-        Msg("准备开始构建镜像")
+        Msg("Ready to start image building")
 	for i := range 10 {
-        logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("开始执行一次镜像构建与验证")
+        logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
 
 		// Call buildImageFromMap function to execute build operation
 		err = builder.BuildImageFromMap(
@@ -71,7 +71,7 @@ func main() {
 			panic(err)
 		}
 
-        logger.Info().Str("phase", "build").Int("step", 2).Int("test_case", i).Msg("镜像构建完成")
+        logger.Info().Str("phase", "build").Int("step", 2).Int("test_case", i).Msg("Image building completed")
 
 		// Validate the built image
 		err = validator.ValidateBuiltImage(ctx, content)
@@ -80,6 +80,6 @@ func main() {
 			panic(err)
 		}
 
-        logger.Info().Str("phase", "validate").Int("step", 3).Int("test_case", i).Msg("镜像验证完成")
+        logger.Info().Str("phase", "validate").Int("step", 3).Int("test_case", i).Msg("Image validation completed")
 	}
 }

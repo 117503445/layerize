@@ -4,6 +4,9 @@ import (
 	"os"
 
 	"github.com/117503445/goutils"
+	"github.com/117503445/layerize/internal/builder"
+	"github.com/117503445/layerize/internal/types"
+	"github.com/117503445/layerize/internal/validator"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 )
@@ -21,7 +24,7 @@ func main() {
 	// 从环境变量读取认证信息
 	username := os.Getenv("username")
 	password := os.Getenv("password")
-	auth := Auth{Username: username, Password: password}
+	auth := types.Auth{Username: username, Password: password}
 
 	content := goutils.TimeStrMilliSec()
 
@@ -32,7 +35,7 @@ func main() {
 	}
 
 	// 调用 buildImageFromMap 函数执行构建操作
-	err = buildImageFromMap(
+	err = builder.BuildImageFromMap(
 		files,
 		"117503445/layerize-test-base", // target image
 		auth,                           // target auth
@@ -49,7 +52,7 @@ func main() {
 	log.Info().Msg("镜像构建完成")
 
 	// 验证构建的镜像
-	err = validateBuiltImage(content)
+	err = validator.ValidateBuiltImage(content)
 	if err != nil {
 		log.Error().Err(err).Msg("镜像验证失败")
 		panic(err)

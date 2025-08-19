@@ -1,4 +1,4 @@
-package main
+package validator
 
 import (
 	"fmt"
@@ -8,8 +8,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// validateBuiltImage 验证构建的镜像是否正确
-func validateBuiltImage(content string) error {
+// ValidateBuiltImage 验证构建的镜像是否正确
+func ValidateBuiltImage(content string) error {
 	// 添加 podman 测试
 	// podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run -it --rm --entrypoint sh registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357
 	// 要求存在 new.txt，且内容是 content。old.txt 需要不存在

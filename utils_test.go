@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/117503445/goutils"
+	"github.com/117503445/layerize/internal/utils"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 )
@@ -14,7 +15,7 @@ func TestCalculateFileSHA256(t *testing.T) {
 	goutils.InitZeroLog()
 
 	// 测试使用现有的 ./tmp/diff.tar.gz 文件
-	hash, err := calculateFileSHA256("./tmp/diff.tar.gz")
+	hash, err := utils.CalculateFileSHA256("./tmp/diff.tar.gz")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
@@ -35,7 +36,7 @@ func TestCalculateFileSHA256(t *testing.T) {
 	assert.NoError(t, err)
 
 	// 计算文件的 SHA256
-	hash, err = calculateFileSHA256(tmpfile.Name())
+	hash, err = utils.CalculateFileSHA256(tmpfile.Name())
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
@@ -44,6 +45,6 @@ func TestCalculateFileSHA256(t *testing.T) {
 	assert.Equal(t, expectedHash, hash)
 
 	// 测试不存在的文件
-	_, err = calculateFileSHA256("non-existent-file.txt")
+	_, err = utils.CalculateFileSHA256("non-existent-file.txt")
 	assert.Error(t, err)
 }

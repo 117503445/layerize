@@ -1,4 +1,4 @@
-package main
+package builder
 
 import (
 	"bytes"
@@ -10,13 +10,18 @@ import (
 	"os"
 
 	"github.com/117503445/goutils"
+	"github.com/117503445/layerize/internal/config"
+	"github.com/117503445/layerize/internal/manifest"
+	"github.com/117503445/layerize/internal/registry"
+	"github.com/117503445/layerize/internal/types"
+	"github.com/117503445/layerize/internal/utils"
 	"github.com/rs/zerolog/log"
 )
 
-// buildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
-func buildImageFromMap(files map[string][]byte, targetImage string, targetAuth Auth, baseImageName string, baseImageAuth Auth, baseImageTag string, targetImageTag string) error {
+// BuildImageFromMap 从文件映射创建 tar，压缩为 tar.gz，然后构建镜像
+func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
 	// 使用 MapToTar 创建 tar 字节数组
-	tarData, err := MapToTar(files)
+	tarData, err := utils.MapToTar(files)
 	if err != nil {
 		log.Error().Err(err).Msg("创建 tar 数据失败")
 		return fmt.Errorf("创建 tar 数据失败: %w", err)
@@ -35,7 +40,7 @@ func buildImageFromMap(files map[string][]byte, targetImage string, targetAuth A
 	}
 
 	// 调用 BuildImage
-	params := BuildImageParams{
+	params := types.BuildImageParams{
 		BaseImageName:   baseImageName,
 		BaseImageAuth:   baseImageAuth,
 		DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
@@ -52,7 +57,7 @@ func buildImageFromMap(files map[string][]byte, targetImage string, targetAuth A
 // BuildImage 封装了构建镜像的完整流程
 // 参数:
 // - params: BuildImageParams 结构体，包含构建镜像所需的所有参数
-func BuildImage(params BuildImageParams) error {
+func BuildImage(params types.BuildImageParams) error {
 	goutils.InitZeroLog()
 
 	// 获取 diff.tar 的内容
@@ -63,14 +68,14 @@ func BuildImage(params BuildImageParams) error {
 	}
 
 	// 解压缩diffTarGzData获取未压缩的数据
-	diffTarData, err := DecompressGzipData(diffTarGzData)
+	diffTarData, err := utils.DecompressGzipData(diffTarGzData)
 	if err != nil {
 		log.Error().Err(err).Msg("解压缩diffTar数据失败")
 		return err
 	}
 
 	// 计算未压缩 diff.tar 的 SHA256 用作 diffID
-	diffSha256sum, err := calculateDataSHA256(diffTarData)
+	diffSha256sum, err := utils.CalculateDataSHA256(diffTarData)
 	if err != nil {
 		log.Error().Err(err).Msg("计算diff.tar SHA256失败")
 		return err
@@ -109,14 +114,14 @@ func BuildImage(params BuildImageParams) error {
 	defer file.Close()
 
 	// 计算压缩文件的SHA256
-	sha256sum, err := calculateFileSHA256(tmpFile.Name())
+	sha256sum, err := utils.CalculateFileSHA256(tmpFile.Name())
 	if err != nil {
 		log.Error().Err(err).Msg("计算压缩文件SHA256失败")
 		return err
 	}
 
 	// 上传 layer 到目标镜像仓库
-	err = UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
+	err = registry.UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
 		return err
@@ -134,17 +139,17 @@ func BuildImage(params BuildImageParams) error {
 	}
 
 	// 获取基础镜像配置信息
-	config, err := getConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	baseConfig, err := registry.GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取config失败")
 		return err
 	}
 
-	log.Info().Int("configSize", len(config)).Msg("获取config成功")
-	log.Debug().RawJSON("config", config).Msg("config内容")
+	log.Info().Int("configSize", len(baseConfig)).Msg("获取config成功")
+	log.Debug().RawJSON("config", baseConfig).Msg("config内容")
 
 	// 调用 UpdateOCIConfig 更新config，使用 diff.tar 的 sha256 作为 diffID
-	updatedConfig, err = UpdateOCIConfig(config, "sha256:"+diffSha256sum)
+	updatedConfig, err = manifest.UpdateOCIConfig(baseConfig, "sha256:"+diffSha256sum)
 	if err != nil {
 		log.Error().Err(err).Msg("更新config失败")
 		return err
@@ -154,7 +159,7 @@ func BuildImage(params BuildImageParams) error {
 	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("更新后的config内容")
 
 	// 上传更新后的配置
-	err = uploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
+	err = config.UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的config失败")
 		return err
@@ -169,18 +174,18 @@ func BuildImage(params BuildImageParams) error {
 	}
 
 	// 获取基础镜像manifest示例
-	manifest, contentType, err := GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	manifestData, contentType, err := registry.GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("获取manifest失败")
 		return err
 	}
 
-	log.Info().Str("contentType", contentType).Int("manifestSize", len(manifest)).Msg("获取manifest成功")
+	log.Info().Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("获取manifest成功")
 	// 如果需要查看manifest内容，可以取消下面的注释
-	log.Debug().RawJSON("manifest", manifest).Msg("manifest内容")
+	log.Debug().RawJSON("manifest", manifestData).Msg("manifest内容")
 
 	// 计算更新后配置的SHA256摘要
-	configSHA256, err := calculateDataSHA256(updatedConfig)
+	configSHA256, err := utils.CalculateDataSHA256(updatedConfig)
 	if err != nil {
 		log.Error().Err(err).Msg("计算配置SHA256失败")
 		return err
@@ -188,27 +193,27 @@ func BuildImage(params BuildImageParams) error {
 	configDigest := "sha256:" + configSHA256
 
 	// 更新 manifest 中的配置引用
-	var manifestData map[string]any
-	if err := json.Unmarshal(manifest, &manifestData); err != nil {
+	var manifestDataObj map[string]any
+	if err := json.Unmarshal(manifestData, &manifestDataObj); err != nil {
 		log.Error().Err(err).Msg("解析manifest失败")
 		return err
 	}
 
-	if config, ok := manifestData["config"].(map[string]any); ok {
-		config["digest"] = configDigest
+	if configSection, ok := manifestDataObj["config"].(map[string]any); ok {
+		configSection["digest"] = configDigest
 		// 重新计算配置大小
-		config["size"] = len(updatedConfig)
+		configSection["size"] = len(updatedConfig)
 	}
 
 	// 重新序列化 manifest
-	updatedManifestWithNewConfig, err := json.Marshal(manifestData)
+	updatedManifestWithNewConfig, err := json.Marshal(manifestDataObj)
 	if err != nil {
 		log.Error().Err(err).Msg("序列化更新后的manifest失败")
 		return err
 	}
 
 	// 调用 updateOCIManifest 更新manifest
-	updatedManifest, err := updateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
+	updatedManifest, err := manifest.UpdateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
 	if err != nil {
 		log.Error().Err(err).Msg("更新manifest失败")
 		return err
@@ -224,8 +229,8 @@ func BuildImage(params BuildImageParams) error {
 	}
 
 	// 上传更新后的manifest到目标仓库
-	client := NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
-	err = client.uploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
+	client := registry.NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
+	err = client.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
 		log.Error().Err(err).Msg("上传更新后的manifest失败")
 		return err

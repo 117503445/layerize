@@ -119,7 +119,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 8).Int("configSize", len(baseConfig)).Msg("Obtained base image config")
+    logger.Info().Str("phase", "build").Int("step", 3).Int("configSize", len(baseConfig)).Msg("Obtained base image config")
     logger.Debug().RawJSON("config", baseConfig).Msg("Base image config content")
 
     // Call UpdateOCIConfig to update config, using provided diff.tar sha256 as diffID
@@ -129,7 +129,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 9).Int("updatedConfigSize", len(updatedConfig)).Msg("Updated base image config, added new layer diffID")
+    logger.Info().Str("phase", "build").Int("step", 4).Int("updatedConfigSize", len(updatedConfig)).Msg("Updated base image config, added new layer diffID")
     logger.Debug().RawJSON("updatedConfig", updatedConfig).Msg("Updated config content")
 
 	// Upload the updated config using centralized client
@@ -147,7 +147,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 10).Str("config_digest", uploadConfigDigest).Msg("Uploaded updated config")
+    logger.Info().Str("phase", "build").Int("step", 5).Str("config_digest", uploadConfigDigest).Msg("Uploaded updated config")
 
 	// Determine base image tag
 	baseImageTag = "latest"
@@ -162,7 +162,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 11).Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Obtained base image manifest")
+    logger.Info().Str("phase", "build").Int("step", 6).Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Obtained base image manifest")
     logger.Debug().RawJSON("manifest", manifestData).Msg("Base image manifest content")
 
 	// Calculate SHA256 digest of the updated config
@@ -200,7 +200,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 12).Int("updatedManifestSize", len(updatedManifest)).Msg("Updated manifest, pointing to new config and layer")
+    logger.Info().Str("phase", "build").Int("step", 7).Int("updatedManifestSize", len(updatedManifest)).Msg("Updated manifest, pointing to new config and layer")
     logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
 	// Determine target image tag
@@ -216,6 +216,6 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 13).Str("repository", params.TargetImage).Str("reference", targetImageTag).Msg("Uploaded updated manifest to target registry")
+    logger.Info().Str("phase", "build").Int("step", 8).Str("repository", params.TargetImage).Str("reference", targetImageTag).Msg("Uploaded updated manifest to target registry")
 	return nil
 }

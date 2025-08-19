@@ -58,16 +58,15 @@ Layerize 是一个用于构建 OCI 镜像的工具，它通过向现有基础镜
 - `BuildImageFromMap`: 从文件映射构建镜像
 - `BuildImage`: 执行完整的镜像构建流程
 
-构建流程：
+构建流程（流式传输，无需解压与落盘）：
 1. 将文件映射转换为 tar 数据
 2. 压缩为 tar.gz 格式
-3. 计算未压缩数据的 SHA256（diffID）
-4. 创建临时文件用于上传
-5. 上传压缩层到目标镜像仓库
-6. 获取基础镜像配置并更新
-7. 上传更新后的配置
-8. 获取基础镜像清单并更新
-9. 上传更新后的清单
+3. 计算未压缩 `diff.tar` 的 SHA256（作为 config 的 diffID），以及压缩 `diff.tar.gz` 的 SHA256（作为 manifest 的 layer digest）
+4. 使用 `io.Reader` 流式上传压缩层（无需临时文件）
+5. 获取基础镜像配置并更新（将 `diff_ids` 追加 `sha256:<DiffTarSHA256>`）
+6. 上传更新后的配置
+7. 获取基础镜像清单并更新（将 layer `digest` 设为 `sha256:<DiffTarGzSHA256>`，`size` 为压缩大小）
+8. 上传更新后的清单
 
 ### 3. registry 包 - 镜像仓库交互
 
@@ -189,18 +188,20 @@ if err := gzWriter.Close(); err != nil {
 
 ### 4. 调用 BuildImage
 
-将压缩后的数据包装为参数并调用 [BuildImage](file:///workspace/internal/builder/builder.go#L35-L270) 函数：
+将压缩后的数据与必要元信息包装为参数并调用 [BuildImage](file:///workspace/internal/builder/builder.go) 函数：
 
 ```go
 params := types.BuildImageParams{
-    BaseImageName:   baseImageName,
-    BaseImageAuth:   baseImageAuth,
-    DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
-    DiffTarLen:      int64(gzData.Len()),
-    TargetImage:     targetImage,
-    TargetAuth:      targetAuth,
-    BaseImageTag:    baseImageTag,
-    TargetImageTag:  targetImageTag,
+    BaseImageName:    baseImageName,
+    BaseImageAuth:    baseImageAuth,
+    DiffTarGzReader:  bytes.NewReader(gzData.Bytes()),
+    DiffTarLen:       int64(gzData.Len()),
+    DiffTarSHA256:    diffTarSHA256,    // 未压缩 tar 的 SHA256（diffID）
+    DiffTarGzSHA256:  diffTarGzSHA256,  // 压缩层 blob 的 SHA256
+    TargetImage:      targetImage,
+    TargetAuth:       targetAuth,
+    BaseImageTag:     baseImageTag,
+    TargetImageTag:   targetImageTag,
 }
 
 return BuildImage(ctx, params)
@@ -208,7 +209,7 @@ return BuildImage(ctx, params)
 
 ### 5. BuildImage 执行流程
 
-[BuildImage](file:///workspace/internal/builder/builder.go#L35-L270) 函数执行完整的镜像构建过程，包含以下关键步骤和日志：
+[BuildImage](file:///workspace/internal/builder/builder.go) 函数执行完整的镜像构建过程，包含以下关键步骤和日志：
 
 #### 步骤 0: 初始化和记录开始信息
 
@@ -226,97 +227,36 @@ return BuildImage(ctx, params)
 }
 ```
 
-#### 步骤 1: 读取压缩的差异层数据
+#### 步骤 1: 使用提供的压缩层大小
 
 关键日志：
 ```json
 {
   "phase": "build",
   "step": 1,
-  "gz_size": 压缩数据大小,
-  "message": "Read compressed differential layer data"
+  "compressed_size": 压缩大小,
+  "message": "Using provided compressed layer size"
 }
 ```
 
-#### 步骤 2: 解压缩差异层数据
+#### 步骤 2: 流式上传压缩层到目标镜像仓库
 
 关键日志：
 ```json
 {
   "phase": "build",
   "step": 2,
-  "tar_size": 解压后数据大小,
-  "message": "Decompressed differential layer to diff.tar data"
+  "message": "Uploaded compressed layer to target image registry"
 }
 ```
 
-#### 步骤 3: 计算未压缩数据的 SHA256 (diffID)
+#### 步骤 3: 获取基础镜像配置
 
 关键日志：
 ```json
 {
   "phase": "build",
   "step": 3,
-  "diff_id": "sha256:摘要值",
-  "message": "Calculated SHA256 of diff.tar (diffID)"
-}
-```
-
-#### 步骤 4: 创建临时文件并写入压缩数据
-
-关键日志：
-```json
-{
-  "phase": "build",
-  "step": 4,
-  "tmp_file": "临时文件路径",
-  "bytes_written": 写入字节数,
-  "message": "Written compressed layer to temporary file"
-}
-```
-
-#### 步骤 5: 获取压缩层大小信息
-
-关键日志：
-```json
-{
-  "phase": "build",
-  "step": 5,
-  "compressed_size": 压缩文件大小,
-  "message": "Get compressed layer size"
-}
-```
-
-#### 步骤 6: 计算压缩文件的 SHA256
-
-关键日志：
-```json
-{
-  "phase": "build",
-  "step": 6,
-  "layer_digest": "sha256:摘要值",
-  "message": "Calculated compressed layer SHA256"
-}
-```
-
-#### 步骤 7: 上传压缩层到目标镜像仓库
-
-关键日志：
-```json
-{
-  "phase": "build",
-  "step": 7,
-  "message": "Uploaded compressed layer to target image registry"
-}
-```
-
-#### 步骤 8: 获取基础镜像配置
-
-关键日志：
-```json
-{
-  "phase": "build",
-  "step": 8,
   "configSize": 配置大小,
   "message": "Obtained base image config"
 }
@@ -324,13 +264,13 @@ return BuildImage(ctx, params)
 
 Debug 级别日志还会包含完整的配置内容。
 
-#### 步骤 9: 更新 OCI 配置，添加新的层 diffID
+#### 步骤 4: 更新 OCI 配置，添加新的层 diffID
 
 关键日志：
 ```json
 {
   "phase": "build",
-  "step": 9,
+  "step": 4,
   "updatedConfigSize": 更新后配置大小,
   "message": "Updated base image config, added new layer diffID"
 }
@@ -338,25 +278,25 @@ Debug 级别日志还会包含完整的配置内容。
 
 Debug 级别日志还会包含更新后的配置内容。
 
-#### 步骤 10: 上传更新后的配置
+#### 步骤 5: 上传更新后的配置
 
 关键日志：
 ```json
 {
   "phase": "build",
-  "step": 10,
+  "step": 5,
   "config_digest": "配置摘要",
   "message": "Uploaded updated config"
 }
 ```
 
-#### 步骤 11: 获取基础镜像清单
+#### 步骤 6: 获取基础镜像清单
 
 关键日志：
 ```json
 {
   "phase": "build",
-  "step": 11,
+  "step": 6,
   "contentType": "内容类型",
   "manifestSize": 清单大小,
   "message": "Obtained base image manifest"
@@ -365,13 +305,13 @@ Debug 级别日志还会包含更新后的配置内容。
 
 Debug 级别日志还会包含完整的清单内容。
 
-#### 步骤 12: 更新清单，指向新配置和层
+#### 步骤 7: 更新清单，指向新配置和层
 
 关键日志：
 ```json
 {
   "phase": "build",
-  "step": 12,
+  "step": 7,
   "updatedManifestSize": 更新后清单大小,
   "message": "Updated manifest, pointing to new config and layer"
 }
@@ -379,13 +319,13 @@ Debug 级别日志还会包含完整的清单内容。
 
 Debug 级别日志还会包含更新后的清单内容。
 
-#### 步骤 13: 上传更新后的清单到目标仓库
+#### 步骤 8: 上传更新后的清单到目标仓库
 
 关键日志：
 ```json
 {
   "phase": "build",
-  "step": 13,
+  "step": 8,
   "repository": "仓库名称",
   "reference": "引用标签",
   "message": "Uploaded updated manifest to target registry"

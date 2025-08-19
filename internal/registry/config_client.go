@@ -18,10 +18,12 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 	
-	logger.Info().
+    logger.Info().
 		Str("repository", repository).
 		Str("scope", scope).
-		Msg("Starting config upload with centralized client")
+        Str("phase", "upload").
+        Int("step", 0).
+        Msg("Starting config upload with centralized client")
 
 	// Step 1: Initiate blob upload
 	uploadURL := fmt.Sprintf("/v2/%s/blobs/uploads/", repository)
@@ -62,7 +64,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 		return fmt.Errorf("failed to get Location header from upload initiation")
 	}
 
-	logger.Debug().Str("upload_location", location).Msg("Upload initiated successfully")
+    logger.Debug().Str("upload_location", location).Str("phase", "upload").Int("step", 1).Msg("Upload initiated successfully")
 
 	// Step 2: Upload the config data
 	var finalUploadURL string
@@ -79,7 +81,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 		finalUploadURL += "?digest=" + configDigest
 	}
 
-	logger.Debug().Str("final_upload_url", finalUploadURL).Msg("Uploading config data")
+    logger.Debug().Str("final_upload_url", finalUploadURL).Str("phase", "upload").Int("step", 2).Msg("Uploading config data")
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT", finalUploadURL, bytes.NewReader(configData))
 	if err != nil {
@@ -106,11 +108,13 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 
 	if putResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(putResp.Body)
-		logger.Error().
+        logger.Error().
 			Int("status_code", putResp.StatusCode).
 			Str("response_body", string(body)).
 			Str("upload_url", finalUploadURL).
-			Msg("Config upload failed")
+            Str("phase", "upload").
+            Int("step", 2).
+            Msg("Config upload failed")
 		// If we get 401, invalidate the token
 		if putResp.StatusCode == http.StatusUnauthorized {
 			client.InvalidateToken(ctx, scope)
@@ -118,9 +122,11 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 		return fmt.Errorf("config upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}
 
-	logger.Info().
+    logger.Info().
 		Str("repository", repository).
 		Str("digest", configDigest).
-		Msg("Config upload successful using centralized client")
+        Str("phase", "upload").
+        Int("step", 3).
+        Msg("Config upload successful using centralized client")
 	return nil
 }

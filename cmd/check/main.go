@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -39,14 +38,20 @@ func main() {
 	logger := log.Ctx(ctx)
 
 	imagePath := "./tmp/diff"
+    logger.Info().
+        Str("phase", "inspect").
+        Int("step", 0).
+        Str("image_path", imagePath).
+        Msg("开始校验本地 OCI 镜像目录")
 	
-	// Check if image directory exists
+    // Step 1: Check if image directory exists
 	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
 		logger.Error().Str("path", imagePath).Msg("OCI image directory does not exist")
 		os.Exit(1)
 	}
+    logger.Info().Str("phase", "inspect").Int("step", 1).Str("path", imagePath).Msg("已确认镜像目录存在")
 
-	// Check oci-layout file
+    // Step 2: Check oci-layout file
 	ociLayoutPath := filepath.Join(imagePath, "oci-layout")
 	layoutData, err := os.ReadFile(ociLayoutPath)
 	if err != nil {
@@ -60,9 +65,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info().Str("version", ociLayout.ImageLayoutVersion).Msg("OCI image layout version")
+    logger.Info().
+        Str("phase", "inspect").
+        Int("step", 2).
+        Str("path", ociLayoutPath).
+        Str("imageLayoutVersion", ociLayout.ImageLayoutVersion).
+        Msg("已读取 oci-layout（镜像布局描述）")
 
-	// Check index.json file
+    // Step 3: Check index.json file
 	indexJSONPath := filepath.Join(imagePath, "index.json")
 	indexData, err := os.ReadFile(indexJSONPath)
 	if err != nil {
@@ -84,9 +94,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info().Int("schemaVersion", index.SchemaVersion).Int("manifestsCount", len(index.Manifests)).Msg("Index file info")
+    logger.Info().
+        Str("phase", "inspect").
+        Int("step", 3).
+        Str("path", indexJSONPath).
+        Int("schemaVersion", index.SchemaVersion).
+        Int("manifestsCount", len(index.Manifests)).
+        Msg("已解析 index.json（索引文件）")
 
-	// Check manifest file
+    // Step 4: Check manifest file
 	if len(index.Manifests) == 0 {
 		logger.Error().Msg("No manifests found in index.json")
 		os.Exit(1)
@@ -101,7 +117,7 @@ func main() {
 	manifestFileName := manifestDigest[7:] // Remove "sha256:" prefix
 	manifestPath := filepath.Join(imagePath, "blobs", "sha256", manifestFileName)
 	
-	manifestData, err := os.ReadFile(manifestPath)
+    manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
 		logger.Error().Err(err).Str("path", manifestPath).Msg("Failed to read manifest file")
 		os.Exit(1)
@@ -113,15 +129,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info().
-		Int("schemaVersion", manifest.SchemaVersion).
-		Str("mediaType", manifest.MediaType).
-		Str("configDigest", manifest.Config.Digest).
-		Int("configSize", manifest.Config.Size).
-		Int("layersCount", len(manifest.Layers)).
-		Msg("Manifest info")
+    logger.Info().
+        Str("phase", "inspect").
+        Int("step", 4).
+        Str("path", manifestPath).
+        Int("schemaVersion", manifest.SchemaVersion).
+        Str("mediaType", manifest.MediaType).
+        Str("configDigest", manifest.Config.Digest).
+        Int("configSize", manifest.Config.Size).
+        Int("layersCount", len(manifest.Layers)).
+        Msg("已解析 manifest（镜像清单）")
 
-	// Check config file
+    // Step 5: Check config file
 	configDigest := manifest.Config.Digest
 	if len(configDigest) < 7 || configDigest[:7] != "sha256:" {
 		logger.Error().Str("digest", configDigest).Msg("Invalid config digest format")
@@ -142,9 +161,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info().Int("configSize", len(configData)).Msg("Config file checked")
+    logger.Info().
+        Str("phase", "inspect").
+        Int("step", 5).
+        Str("path", configPath).
+        Str("configDigest", configDigest).
+        Int("configSize", len(configData)).
+        Msg("已校验 config（镜像配置文件）")
 
-	// Check layer files
+    // Step 6: Check layer files
 	for i, layer := range manifest.Layers {
 		layerDigest := layer.Digest
 		if len(layerDigest) < 7 || layerDigest[:7] != "sha256:" {
@@ -175,14 +200,16 @@ func main() {
 			os.Exit(1)
 		}
 
-		logger.Info().
-			Int("layerIndex", i).
-			Str("mediaType", layer.MediaType).
-			Str("digest", layer.Digest).
-			Int("size", len(layerData)).
-			Msg("Layer checked")
+        logger.Info().
+            Str("phase", "inspect").
+            Int("step", 6).
+            Int("layerIndex", i).
+            Str("path", layerPath).
+            Str("mediaType", layer.MediaType).
+            Str("digest", layer.Digest).
+            Int("size", len(layerData)).
+            Msg("已校验层（Layer）文件")
 	}
 
-	logger.Info().Msg("OCI image check completed successfully")
-	fmt.Println("OCI image check completed successfully")
+    logger.Info().Str("phase", "inspect").Int("step", 7).Msg("OCI 镜像本地检查完成")
 }

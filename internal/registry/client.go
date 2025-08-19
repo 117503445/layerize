@@ -50,13 +50,14 @@ func (t *Token) IsExpired(ctx context.Context) bool {
 	expiryTime := t.IssuedAt.Add(time.Duration(expiresIn)*time.Second - bufferTime)
 	isExpired := time.Now().After(expiryTime)
 	
-	logger.Debug().
+    logger.Debug().
 		Time("issued_at", t.IssuedAt).
 		Int("original_expires_in", t.ExpiresIn).
 		Int("effective_expires_in", expiresIn).
 		Time("expiry_time", expiryTime).
 		Bool("is_expired", isExpired).
-		Msg("Token expiry check")
+        Str("phase", "auth").
+        Msg("Token expiry check")
 	
 	return isExpired
 }
@@ -82,22 +83,24 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 	token, exists := c.tokenCache[scope]
 	c.tokenMutex.RUnlock()
 
-	logger.Debug().
+    logger.Debug().
 		Str("scope", scope).
 		Bool("token_exists", exists).
-		Msg("Checking token cache")
+        Str("phase", "auth").
+        Msg("Checking token cache")
 
 	if !exists || token.IsExpired(ctx) {
-		logger.Info().
+        logger.Info().
 			Str("scope", scope).
 			Bool("existed", exists).
 			Bool("expired", exists && token.IsExpired(ctx)).
-			Msg("Fetching new token")
+            Str("phase", "auth").
+            Msg("Fetching new token")
 		
 		var err error
 		token, err = c.fetchToken(ctx, scope)
 		if err != nil {
-			logger.Error().Err(err).Str("scope", scope).Msg("Failed to fetch token")
+            logger.Error().Err(err).Str("scope", scope).Str("phase", "auth").Msg("Failed to fetch token")
 			return "", err
 		}
 
@@ -105,9 +108,9 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 		c.tokenCache[scope] = token
 		c.tokenMutex.Unlock()
 		
-		logger.Info().Str("scope", scope).Msg("Token cached successfully")
+        logger.Info().Str("scope", scope).Str("phase", "auth").Msg("Token cached successfully")
 	} else {
-		logger.Debug().Str("scope", scope).Msg("Using cached token")
+        logger.Debug().Str("scope", scope).Str("phase", "auth").Msg("Using cached token")
 	}
 
 	return "Bearer " + token.AccessToken, nil
@@ -120,8 +123,8 @@ func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 	c.tokenMutex.Lock()
 	defer c.tokenMutex.Unlock()
 	
-	if _, exists := c.tokenCache[scope]; exists {
-		logger.Info().Str("scope", scope).Msg("Invalidating cached token due to authentication failure")
+    if _, exists := c.tokenCache[scope]; exists {
+        logger.Info().Str("scope", scope).Str("phase", "auth").Msg("Invalidating cached token due to authentication failure")
 		delete(c.tokenCache, scope)
 	}
 }
@@ -130,15 +133,15 @@ func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 	logger := log.Ctx(ctx)
 	
-	logger.Debug().Str("scope", scope).Msg("Starting token fetch")
+    logger.Debug().Str("scope", scope).Str("phase", "auth").Int("step", 0).Msg("Starting token fetch")
 	
 	authURL, err := c.getAuthURL(ctx, scope)
 	if err != nil {
-		logger.Error().Err(err).Msg("Failed to get auth URL")
+        logger.Error().Err(err).Str("phase", "auth").Int("step", 0).Msg("Failed to get auth URL")
 		return nil, err
 	}
 
-	logger.Debug().Str("auth_url", authURL).Msg("Requesting token from auth server")
+    logger.Debug().Str("auth_url", authURL).Str("phase", "auth").Int("step", 1).Msg("Requesting token from auth server")
 	
 	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
@@ -149,34 +152,38 @@ func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		logger.Error().Err(err).Str("auth_url", authURL).Msg("HTTP request to auth server failed")
+        logger.Error().Err(err).Str("auth_url", authURL).Str("phase", "auth").Int("step", 1).Msg("HTTP request to auth server failed")
 		return nil, fmt.Errorf("auth request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		logger.Error().
+        logger.Error().
 			Int("status_code", resp.StatusCode).
 			Str("response_body", string(body)).
 			Str("auth_url", authURL).
-			Msg("Authentication failed")
+            Str("phase", "auth").
+            Int("step", 1).
+            Msg("Authentication failed")
 		return nil, fmt.Errorf("authentication failed: %s, response: %s", resp.Status, string(body))
 	}
 
 	var token Token
 	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
-		logger.Error().Err(err).Msg("Failed to decode token response")
+        logger.Error().Err(err).Str("phase", "auth").Int("step", 2).Msg("Failed to decode token response")
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	token.IssuedAt = time.Now()
 	
-	logger.Info().
+    logger.Info().
 		Str("scope", scope).
 		Time("issued_at", token.IssuedAt).
 		Int("expires_in", token.ExpiresIn).
-		Msg("Token fetched successfully")
+        Str("phase", "auth").
+        Int("step", 3).
+        Msg("Token fetched successfully")
 	
 	return &token, nil
 }

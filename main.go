@@ -20,12 +20,18 @@ func main() {
 
 	logger := log.Ctx(ctx)
 
+    logger.Info().
+        Str("phase", "init").
+        Int("step", 0).
+        Msg("启动 Layerize 示例程序")
+
 	// Load .env file
 	err := godotenv.Load()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to load .env file")
 		panic(err)
 	}
+    logger.Info().Str("phase", "init").Int("step", 1).Msg("已加载 .env 环境变量")
 
 	// Read authentication information from environment variables
 	username := os.Getenv("username")
@@ -33,13 +39,21 @@ func main() {
 	auth := types.Auth{Username: username, Password: password}
 	content := goutils.TimeStrMilliSec()
 
-	// Create file mapping to simulate content in tmp/diff.tar
+    // Create file mapping to simulate content in tmp/diff.tar
 	files := map[string][]byte{
 		"new.txt":     []byte(content),
 		".wh.old.txt": []byte(""),
 	}
+    logger.Info().
+        Str("phase", "build").
+        Int("step", 0).
+        Str("target_image", "117503445/layerize-test-base").
+        Str("target_tag", "08182357").
+        Str("base_image", "117503445/layerize-test-base").
+        Str("base_tag", "latest").
+        Msg("准备开始构建镜像")
 	for i := range 10 {
-		logger.Info().Msgf("Building image TestCase %d", i)
+        logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("开始执行一次镜像构建与验证")
 
 		// Call buildImageFromMap function to execute build operation
 		err = builder.BuildImageFromMap(
@@ -57,7 +71,7 @@ func main() {
 			panic(err)
 		}
 
-		logger.Info().Msg("Image build completed")
+        logger.Info().Str("phase", "build").Int("step", 2).Int("test_case", i).Msg("镜像构建完成")
 
 		// Validate the built image
 		err = validator.ValidateBuiltImage(ctx, content)
@@ -66,6 +80,6 @@ func main() {
 			panic(err)
 		}
 
-		logger.Info().Msg("Image validation completed")
+        logger.Info().Str("phase", "validate").Int("step", 3).Int("test_case", i).Msg("镜像验证完成")
 	}
 }

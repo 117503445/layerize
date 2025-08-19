@@ -31,11 +31,12 @@ func WithRetry(ctx context.Context, operation string, config RetryConfig, fn fun
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			delay := time.Duration(attempt) * config.BaseDelay
-			logger.Info().
+            logger.Info().
 				Str("operation", operation).
 				Int("attempt", attempt).
 				Dur("delay", delay).
-				Msg("Retrying operation after delay")
+                Str("phase", "retry").
+                Msg("Retrying operation after delay")
 			
 			select {
 			case <-ctx.Done():
@@ -44,19 +45,21 @@ func WithRetry(ctx context.Context, operation string, config RetryConfig, fn fun
 			}
 		}
 		
-			logger.Debug().
+            logger.Debug().
 		Str("operation", operation).
 		Int("attempt", attempt).
-		Msg("Executing operation")
+        Str("phase", "retry").
+        Msg("Executing operation")
 		
 		resp, err := fn()
 		if err != nil {
 			lastErr = err
-					logger.Warn().
+                    logger.Warn().
 			Err(err).
 			Str("operation", operation).
 			Int("attempt", attempt).
-			Msg("Operation failed with error")
+            Str("phase", "retry").
+            Msg("Operation failed with error")
 			continue
 		}
 		
@@ -66,28 +69,31 @@ func WithRetry(ctx context.Context, operation string, config RetryConfig, fn fun
 				resp.Body.Close()
 			}
 			lastErr = fmt.Errorf("authentication failed: %s", resp.Status)
-					logger.Warn().
+                    logger.Warn().
 			Int("status_code", resp.StatusCode).
 			Str("operation", operation).
 			Int("attempt", attempt).
-			Msg("Operation failed with 401 - will retry")
+            Str("phase", "retry").
+            Msg("Operation failed with 401 - will retry")
 			continue
 		}
 		
 		// Success or non-retryable failure
-			logger.Debug().
+            logger.Debug().
 		Str("operation", operation).
 		Int("attempt", attempt).
 		Int("status_code", resp.StatusCode).
-		Msg("Operation completed")
+        Str("phase", "retry").
+        Msg("Operation completed")
 		return resp, nil
 	}
 	
-	logger.Error().
+    logger.Error().
 		Err(lastErr).
 		Str("operation", operation).
 		Int("max_attempts", config.MaxRetries + 1).
-		Msg("Operation failed after all retry attempts")
+        Str("phase", "retry").
+        Msg("Operation failed after all retry attempts")
 	
 	return nil, fmt.Errorf("operation %s failed after %d attempts: %w", operation, config.MaxRetries+1, lastErr)
 }

@@ -18,19 +18,21 @@ import (
 func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string) (string, error) {
 	logger := log.Ctx(ctx)
 	
-	logger.Info().
+    logger.Info().
 		Str("wwwAuth", wwwAuth).
 		Str("username", username).
-		Msg("Starting token retrieval process")
+        Str("phase", "auth").
+        Int("step", 0).
+        Msg("Starting token retrieval process")
 
 	// Add timestamp to help track token requests
-	logger.Debug().Time("request_time", time.Now()).Msg("Token request timestamp")
+    logger.Debug().Time("request_time", time.Now()).Str("phase", "auth").Int("step", 0).Msg("Token request timestamp")
 
 	// Parse WWW-Authenticate header
 	// Format: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/hello-world:pull"
 	
 	if !strings.HasPrefix(wwwAuth, "Bearer ") {
-		logger.Error().Str("wwwAuth", wwwAuth).Msg("Unsupported authentication type")
+        logger.Error().Str("wwwAuth", wwwAuth).Str("phase", "auth").Int("step", 0).Msg("Unsupported authentication type")
 		return "", fmt.Errorf("unsupported auth type: %s", wwwAuth)
 	}
 
@@ -50,15 +52,17 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 	}
 
 	if realm == "" {
-		logger.Error().Msg("Realm parameter not found in WWW-Authenticate header")
+        logger.Error().Str("phase", "auth").Int("step", 1).Msg("Realm parameter not found in WWW-Authenticate header")
 		return "", fmt.Errorf("realm parameter not found")
 	}
 
-	logger.Info().
+    logger.Info().
 		Str("realm", realm).
 		Str("service", service).
 		Str("originalScope", scope).
-		Msg("Parsed authentication parameters")
+        Str("phase", "auth").
+        Int("step", 1).
+        Msg("Parsed authentication parameters")
 
 	// Build auth URL
 	authURL := realm
@@ -72,10 +76,12 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 		if strings.Contains(scope, ":pull") && !strings.Contains(scope, ":push") {
 			originalScope := scope
 			scope = strings.Replace(scope, ":pull", ":push,pull", 1)
-			logger.Info().
+            logger.Info().
 				Str("originalScope", originalScope).
 				Str("modifiedScope", scope).
-				Msg("Modified scope to include push permissions")
+                Str("phase", "auth").
+                Int("step", 1).
+                Msg("Modified scope to include push permissions")
 		}
 		params = append(params, "scope="+url.QueryEscape(scope))
 	}
@@ -84,7 +90,7 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 		authURL += "?" + strings.Join(params, "&")
 	}
 
-	logger.Info().Str("authURL", authURL).Str("finalScope", scope).Msg("Requesting authentication token")
+    logger.Info().Str("authURL", authURL).Str("finalScope", scope).Str("phase", "auth").Int("step", 2).Msg("Requesting authentication token")
 
 	// Request token
 	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
@@ -101,7 +107,7 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 		Timeout: 30 * time.Second,
 	}
 
-	logger.Debug().Msg("Sending token request to auth server")
+    logger.Debug().Str("phase", "auth").Int("step", 2).Msg("Sending token request to auth server")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("auth request failed: %w", err)
@@ -110,12 +116,14 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		logger.Error().
+        logger.Error().
 			Int("status_code", resp.StatusCode).
 			Str("status", resp.Status).
 			Str("response_body", string(body)).
 			Str("auth_url", authURL).
-			Msg("Authentication request failed")
+            Str("phase", "auth").
+            Int("step", 2).
+            Msg("Authentication request failed")
 		return "", fmt.Errorf("authentication failed: %s, response: %s", resp.Status, string(body))
 	}
 
@@ -138,10 +146,12 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 		return "", fmt.Errorf("no valid token received")
 	}
 
-	logger.Info().
+    logger.Info().
 		Str("token_prefix", token[:min(len(token), 10)]). // Only log first 10 chars for security
 		Int("token_length", len(token)).
 		Time("token_obtained_at", time.Now()).
-		Msg("Successfully obtained authentication token")
+        Str("phase", "auth").
+        Int("step", 3).
+        Msg("Successfully obtained authentication token")
 	return token, nil
 }

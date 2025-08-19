@@ -16,11 +16,13 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 	
-	logger.Info().
+    logger.Info().
 		Str("repository", repository).
 		Str("scope", scope).
 		Str("layer_sha256", sha256sum).
-		Msg("Starting layer upload with centralized client")
+        Str("phase", "upload").
+        Int("step", 0).
+        Msg("Starting layer upload with centralized client")
 
 	// Step 1: Initiate blob upload
 	uploadURL := fmt.Sprintf("/v2/%s/blobs/uploads/", repository)
@@ -61,7 +63,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 		return fmt.Errorf("failed to get Location header from upload initiation")
 	}
 
-	logger.Debug().Str("upload_location", location).Msg("Layer upload initiated successfully")
+    logger.Debug().Str("upload_location", location).Str("phase", "upload").Int("step", 1).Msg("Layer upload initiated successfully")
 
 	// Step 2: Upload the layer data
 	var finalUploadURL string
@@ -79,7 +81,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 		finalUploadURL += "?digest=" + digest
 	}
 
-	logger.Debug().Str("final_upload_url", finalUploadURL).Msg("Uploading layer data")
+    logger.Debug().Str("final_upload_url", finalUploadURL).Str("phase", "upload").Int("step", 2).Msg("Uploading layer data")
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT", finalUploadURL, reader)
 	if err != nil {
@@ -105,11 +107,13 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 
 	if putResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(putResp.Body)
-		logger.Error().
+        logger.Error().
 			Int("status_code", putResp.StatusCode).
 			Str("response_body", string(body)).
 			Str("upload_url", finalUploadURL).
-			Msg("Layer upload failed")
+            Str("phase", "upload").
+            Int("step", 2).
+            Msg("Layer upload failed")
 		// If we get 401, invalidate the token
 		if putResp.StatusCode == http.StatusUnauthorized {
 			client.InvalidateToken(ctx, scope)
@@ -117,9 +121,11 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 		return fmt.Errorf("layer upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}
 
-	logger.Info().
+    logger.Info().
 		Str("repository", repository).
 		Str("digest", digest).
-		Msg("Layer upload successful using centralized client")
+        Str("phase", "upload").
+        Int("step", 3).
+        Msg("Layer upload successful using centralized client")
 	return nil
 }

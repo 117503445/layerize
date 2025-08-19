@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -18,6 +19,9 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 		Str("wwwAuth", wwwAuth).
 		Str("username", username).
 		Msg("Starting token retrieval process")
+
+	// Add timestamp to help track token requests
+	log.Debug().Time("request_time", time.Now()).Msg("Token request timestamp")
 
 	// Parse WWW-Authenticate header
 	// Format: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/hello-world:pull"
@@ -89,7 +93,12 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	req.Header.Set("Authorization", "Basic "+auth)
 
-	client := &http.Client{}
+	// Add timeout to prevent hanging requests
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	log.Debug().Msg("Sending token request to auth server")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("auth request failed: %w", err)
@@ -98,6 +107,12 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("status", resp.Status).
+			Str("response_body", string(body)).
+			Str("auth_url", authURL).
+			Msg("Authentication request failed")
 		return "", fmt.Errorf("authentication failed: %s, response: %s", resp.Status, string(body))
 	}
 
@@ -121,7 +136,9 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	}
 
 	log.Info().
-		Str("token", token).
+		Str("token_prefix", token[:min(len(token), 10)]). // Only log first 10 chars for security
+		Int("token_length", len(token)).
+		Time("token_obtained_at", time.Now()).
 		Msg("Successfully obtained authentication token")
 	return token, nil
 }

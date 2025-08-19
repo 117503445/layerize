@@ -10,7 +10,6 @@ import (
 	"os"
 
 	"github.com/117503445/goutils"
-	"github.com/117503445/layerize/internal/config"
 	"github.com/117503445/layerize/internal/manifest"
 	"github.com/117503445/layerize/internal/registry"
 	"github.com/117503445/layerize/internal/types"
@@ -59,6 +58,19 @@ func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth t
 // - params: BuildImageParams struct containing all parameters needed to build the image
 func BuildImage(params types.BuildImageParams) error {
 	goutils.InitZeroLog()
+
+	log.Info().
+		Str("base_image", params.BaseImageName).
+		Str("target_image", params.TargetImage).
+		Str("base_tag", params.BaseImageTag).
+		Str("target_tag", params.TargetImageTag).
+		Msg("Starting image build process")
+
+	// Create centralized registry clients for token reuse
+	registryURL := "https://registry.cn-hangzhou.aliyuncs.com"
+	targetClient := registry.NewClient(registryURL, params.TargetAuth.Username, params.TargetAuth.Password)
+	// baseClient for future use if needed for base image operations with different credentials
+	_ = registry.NewClient(registryURL, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 
 	// Get the content of diff.tar
 	diffTarGzData, err := io.ReadAll(params.DiffTarGzReader)
@@ -120,10 +132,10 @@ func BuildImage(params types.BuildImageParams) error {
 		return err
 	}
 
-	// Upload layer to target image registry
-	err = registry.UploadLayerToRegistryWithAuth(file, sha256sum, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
+	// Upload layer to target image registry using centralized client
+	err = registry.UploadLayerWithClient(targetClient, file, sha256sum, params.TargetImage)
 	if err != nil {
-		log.Error().Err(err).Msg("UploadLayerToRegistryWithAuth failed")
+		log.Error().Err(err).Msg("UploadLayerWithClient failed")
 		return err
 	}
 
@@ -139,7 +151,7 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Get base image configuration information
-	baseConfig, err := registry.GetConfigWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	baseConfig, err := registry.GetConfigWithAuth(registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get config")
 		return err
@@ -158,8 +170,16 @@ func BuildImage(params types.BuildImageParams) error {
 	log.Info().Int("updatedConfigSize", len(updatedConfig)).Msg("Successfully updated config")
 	log.Debug().RawJSON("updatedConfig", updatedConfig).Msg("Updated config content")
 
-	// Upload the updated config
-	err = config.UploadUpdatedConfigToRegistry(updatedConfig, "https://registry.cn-hangzhou.aliyuncs.com", params.TargetImage, params.TargetAuth.Username, params.TargetAuth.Password)
+	// Upload the updated config using centralized client
+	// Calculate SHA256 digest of the updated config (for upload)
+	uploadConfigSHA256, err := utils.CalculateDataSHA256(updatedConfig)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to calculate config SHA256 for upload")
+		return err
+	}
+	uploadConfigDigest := "sha256:" + uploadConfigSHA256
+	
+	err = registry.UploadConfigWithClient(targetClient, updatedConfig, uploadConfigDigest, params.TargetImage)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload updated config")
 		return err
@@ -174,7 +194,7 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Get base image manifest example
-	manifestData, contentType, err := registry.GetManifestWithAuth("https://registry.cn-hangzhou.aliyuncs.com", params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	manifestData, contentType, err := registry.GetManifestWithAuth(registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get manifest")
 		return err
@@ -228,9 +248,8 @@ func BuildImage(params types.BuildImageParams) error {
 		targetImageTag = params.TargetImageTag
 	}
 
-	// Upload the updated manifest to the target registry
-	client := registry.NewClient("https://registry.cn-hangzhou.aliyuncs.com", params.TargetAuth.Username, params.TargetAuth.Password)
-	err = client.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
+	// Upload the updated manifest to the target registry using existing client
+	err = targetClient.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload updated manifest")
 		return err

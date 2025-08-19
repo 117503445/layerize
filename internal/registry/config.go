@@ -2,6 +2,7 @@ package registry
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -100,55 +101,30 @@ func getConfigWithToken(client *http.Client, configURL, token string) ([]byte, e
 
 // UploadConfigToRegistryWithAuth uploads config to image registry with authentication
 func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL, repository, username, password string) error {
-	// Ensure registryURL does not end with /
-	registryURL = strings.TrimSuffix(registryURL, "/")
+	log.Info().
+		Str("registryURL", registryURL).
+		Str("repository", repository).
+		Str("username", username).
+		Str("configDigest", configDigest).
+		Int("configSize", len(configData)).
+		Msg("Starting config upload with authentication")
 
-	client := &http.Client{}
-
-	// Try using Bearer token authentication
-	if username != "" && password != "" {
-		log.Info().Str("registryURL", registryURL).Str("repository", repository).Str("username", username).Msg("Attempting to upload config with username/password")
-
-		// First try POST request to see if authentication is required
-		postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-		req, err := http.NewRequest("POST", postURL, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create POST request: %w", err)
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("POST request failed: %w", err)
-		}
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusUnauthorized {
-			wwwAuth := resp.Header.Get("WWW-Authenticate")
-			if strings.HasPrefix(wwwAuth, "Bearer") {
-				// Use Bearer token authentication
-				token, err := getTokenFromWWWAuth(wwwAuth, username, password)
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to get token")
-					return fmt.Errorf("failed to get token: %w", err)
-				}
-				return uploadConfigWithToken(client, configData, configDigest, registryURL, repository, token)
-			} else {
-				// Use basic authentication
-				return uploadConfigWithBasicAuth(client, configData, configDigest, registryURL, repository, username, password)
-			}
-		} else if resp.StatusCode == http.StatusAccepted {
-			// No authentication required, upload directly
-			location := resp.Header.Get("Location")
-			if location == "" {
-				return fmt.Errorf("failed to get Location header")
-			}
-			return continueConfigUploadWithBasicAuth(client, configData, configDigest, registryURL, repository, location, username, password)
-		} else {
-			return fmt.Errorf("POST request returned unexpected status code: %d", resp.StatusCode)
-		}
+	// Use centralized client for better token management
+	client := NewClient(registryURL, username, password)
+	
+	// Calculate SHA256 of config data for upload
+	hash := sha256.Sum256(configData)
+	calculatedDigest := fmt.Sprintf("sha256:%x", hash)
+	
+	if configDigest != calculatedDigest {
+		log.Warn().
+			Str("provided_digest", configDigest).
+			Str("calculated_digest", calculatedDigest).
+			Msg("Config digest mismatch - using calculated digest")
+		configDigest = calculatedDigest
 	}
 
-	return fmt.Errorf("authentication information required")
+	return UploadConfigWithClient(client, configData, configDigest, repository)
 }
 
 // uploadConfigWithBasicAuth uploads config using basic authentication

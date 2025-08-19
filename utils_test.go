@@ -11,40 +11,40 @@ import (
 )
 
 func TestCalculateFileSHA256(t *testing.T) {
-	// 初始化 zerolog
+	// Initialize zerolog
 	goutils.InitZeroLog()
 
-	// 测试使用现有的 ./tmp/diff.tar.gz 文件
+	// Test using existing ./tmp/diff.tar.gz file
 	hash, err := utils.CalculateFileSHA256("./tmp/diff.tar.gz")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
-	// 验证哈希值不为空且长度正确 (SHA256 应该是 64 个字符)
+	// Verify hash is not empty and has correct length (SHA256 should be 64 characters)
 	assert.Len(t, hash, 64)
 	log.Info().Str("hash", hash).Msg("CalculateFileSHA256")
 
-	// 创建一个临时文件用于测试
+	// Create a temporary file for testing
 	content := "Hello, World!"
 	tmpfile, err := os.CreateTemp("", "test")
 	assert.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
 
-	// 写入测试内容
+	// Write test content
 	_, err = tmpfile.WriteString(content)
 	assert.NoError(t, err)
 	err = tmpfile.Close()
 	assert.NoError(t, err)
 
-	// 计算文件的 SHA256
+	// Calculate file SHA256
 	hash, err = utils.CalculateFileSHA256(tmpfile.Name())
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
-	// 验证哈希值是否正确 (已知的 "Hello, World!" 的 SHA256)
+	// Verify if hash is correct (known SHA256 of "Hello, World!")
 	expectedHash := "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
 	assert.Equal(t, expectedHash, hash)
 
-	// 测试不存在的文件
+	// Test non-existent file
 	_, err = utils.CalculateFileSHA256("non-existent-file.txt")
 	assert.Error(t, err)
 }

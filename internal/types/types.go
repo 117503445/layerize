@@ -4,13 +4,13 @@ import (
 	"io"
 )
 
-// Auth 用于存储认证信息
+// Auth stores authentication information
 type Auth struct {
 	Username string
 	Password string
 }
 
-// BuildImageParams 用于存储 BuildImage 函数的参数
+// BuildImageParams stores parameters for BuildImage function
 type BuildImageParams struct {
 	BaseImageName   string
 	BaseImageAuth   Auth

@@ -14,27 +14,27 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// UploadLayerToRegistryWithAuth 上传层到镜像仓库（带认证）
+// UploadLayerToRegistryWithAuth uploads layer to registry with authentication
 func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
-	// 确保 registryURL 不以 / 结尾
+	// Ensure registryURL does not end with /
 	registryURL = strings.TrimSuffix(registryURL, "/")
 
 	client := &http.Client{}
 
-	// 尝试使用 Bearer token 认证
+	// Try to use Bearer token authentication
 	if username != "" && password != "" {
-		log.Info().Str("registryURL", registryURL).Str("repository", repository).Str("username", username).Msg("尝试使用用户名密码上传层")
+		log.Info().Str("registryURL", registryURL).Str("repository", repository).Str("username", username).Msg("Attempting to upload layer with username/password")
 
 		// 首先尝试 POST 请求，查看是否需要认证
 		postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 		req, err := http.NewRequest("POST", postURL, nil)
 		if err != nil {
-			return fmt.Errorf("创建POST请求失败: %w", err)
+			return fmt.Errorf("failed to create POST request: %w", err)
 		}
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return fmt.Errorf("POST请求失败: %w", err)
+			return fmt.Errorf("POST request failed: %w", err)
 		}
 		resp.Body.Close()
 
@@ -44,8 +44,8 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 				// 使用 Bearer token 认证
 				token, err := getTokenFromWWWAuth(wwwAuth, username, password)
 				if err != nil {
-					log.Error().Err(err).Msg("获取token失败")
-					return fmt.Errorf("获取token失败: %w", err)
+					log.Error().Err(err).Msg("Failed to get token")
+					return fmt.Errorf("failed to get token: %w", err)
 				}
 				return uploadLayerWithToken(client, reader, sha256sum, registryURL, repository, token)
 			} else {
@@ -56,27 +56,27 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 			// 无需认证，直接上传
 			location := resp.Header.Get("Location")
 			if location == "" {
-				return fmt.Errorf("未获取到Location header")
+				return fmt.Errorf("failed to get Location header")
 			}
 			return continueUpload(client, reader, sha256sum, registryURL, repository, location)
 		} else {
-			return fmt.Errorf("POST请求返回意外状态码: %d", resp.StatusCode)
+			return fmt.Errorf("POST request returned unexpected status code: %d", resp.StatusCode)
 		}
 	}
 
-	return fmt.Errorf("需要认证信息")
+	return fmt.Errorf("authentication information required")
 }
 
-// getTokenFromWWWAuth 从 WWW-Authenticate header 获取 token
+// getTokenFromWWWAuth gets token from WWW-Authenticate header
 func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
-	// 解析 WWW-Authenticate header
-	// 格式: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/hello-world:pull"
+	// Parse WWW-Authenticate header
+	// Format: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/hello-world:pull"
 	
 	if !strings.HasPrefix(wwwAuth, "Bearer ") {
-		return "", fmt.Errorf("不支持的认证类型: %s", wwwAuth)
+		return "", fmt.Errorf("unsupported auth type: %s", wwwAuth)
 	}
 
-	// 提取参数
+	// Extract parameters
 	params := strings.Split(wwwAuth[7:], ",")
 	var realm, service, scope string
 
@@ -92,10 +92,10 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	}
 
 	if realm == "" {
-		return "", fmt.Errorf("未找到realm参数")
+		return "", fmt.Errorf("realm parameter not found")
 	}
 
-	// 构建认证URL
+	// Build auth URL
 	authURL := realm
 	params = []string{}
 	if service != "" {
@@ -167,24 +167,24 @@ func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, regi
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 	req, err := http.NewRequest("POST", postURL, nil)
 	if err != nil {
-		return fmt.Errorf("创建POST请求失败: %w", err)
+		return fmt.Errorf("failed to create POST request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST请求失败: %w", err)
+		return fmt.Errorf("POST request failed: %w", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST请求失败，状态码: %d", resp.StatusCode)
+		return fmt.Errorf("POST request failed, status code: %d", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")
 	if location == "" {
-		return fmt.Errorf("未获取到Location header")
+		return fmt.Errorf("failed to get Location header")
 	}
 
 	return continueUploadWithToken(client, reader, sha256sum, registryURL, repository, location, token)
@@ -236,7 +236,7 @@ func uploadLayerWithBasicAuth(client *http.Client, reader io.Reader, sha256sum, 
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 	req, err := http.NewRequest("POST", postURL, nil)
 	if err != nil {
-		return fmt.Errorf("创建POST请求失败: %w", err)
+		return fmt.Errorf("failed to create POST request: %w", err)
 	}
 
 	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
@@ -244,17 +244,17 @@ func uploadLayerWithBasicAuth(client *http.Client, reader io.Reader, sha256sum, 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST请求失败: %w", err)
+		return fmt.Errorf("POST request failed: %w", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST请求失败，状态码: %d", resp.StatusCode)
+		return fmt.Errorf("POST request failed, status code: %d", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")
 	if location == "" {
-		return fmt.Errorf("未获取到Location header")
+		return fmt.Errorf("failed to get Location header")
 	}
 
 	return continueUpload(client, reader, sha256sum, registryURL, repository, location)
@@ -511,12 +511,12 @@ func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL
 		postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 		req, err := http.NewRequest("POST", postURL, nil)
 		if err != nil {
-			return fmt.Errorf("创建POST请求失败: %w", err)
+			return fmt.Errorf("failed to create POST request: %w", err)
 		}
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return fmt.Errorf("POST请求失败: %w", err)
+			return fmt.Errorf("POST request failed: %w", err)
 		}
 		resp.Body.Close()
 
@@ -526,8 +526,8 @@ func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL
 				// 使用 Bearer token 认证
 				token, err := getTokenFromWWWAuth(wwwAuth, username, password)
 				if err != nil {
-					log.Error().Err(err).Msg("获取token失败")
-					return fmt.Errorf("获取token失败: %w", err)
+					log.Error().Err(err).Msg("Failed to get token")
+					return fmt.Errorf("failed to get token: %w", err)
 				}
 				return uploadConfigWithToken(client, configData, configDigest, registryURL, repository, token)
 			} else {
@@ -538,15 +538,15 @@ func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL
 			// 无需认证，直接上传
 			location := resp.Header.Get("Location")
 			if location == "" {
-				return fmt.Errorf("未获取到Location header")
+				return fmt.Errorf("failed to get Location header")
 			}
 			return continueConfigUploadWithBasicAuth(client, configData, configDigest, registryURL, repository, location, username, password)
 		} else {
-			return fmt.Errorf("POST请求返回意外状态码: %d", resp.StatusCode)
+			return fmt.Errorf("POST request returned unexpected status code: %d", resp.StatusCode)
 		}
 	}
 
-	return fmt.Errorf("需要认证信息")
+	return fmt.Errorf("authentication information required")
 }
 
 // uploadConfigWithBasicAuth 使用基本认证上传配置
@@ -555,7 +555,7 @@ func uploadConfigWithBasicAuth(client *http.Client, configData []byte, configDig
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 	req, err := http.NewRequest("POST", postURL, nil)
 	if err != nil {
-		return fmt.Errorf("创建POST请求失败: %w", err)
+		return fmt.Errorf("failed to create POST request: %w", err)
 	}
 
 	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
@@ -563,17 +563,17 @@ func uploadConfigWithBasicAuth(client *http.Client, configData []byte, configDig
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST请求失败: %w", err)
+		return fmt.Errorf("POST request failed: %w", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST请求失败，状态码: %d", resp.StatusCode)
+		return fmt.Errorf("POST request failed, status code: %d", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")
 	if location == "" {
-		return fmt.Errorf("未获取到Location header")
+		return fmt.Errorf("failed to get Location header")
 	}
 
 	return continueConfigUploadWithBasicAuth(client, configData, configDigest, registryURL, repository, location, username, password)
@@ -585,24 +585,24 @@ func uploadConfigWithToken(client *http.Client, configData []byte, configDigest,
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
 	req, err := http.NewRequest("POST", postURL, nil)
 	if err != nil {
-		return fmt.Errorf("创建POST请求失败: %w", err)
+		return fmt.Errorf("failed to create POST request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("POST请求失败: %w", err)
+		return fmt.Errorf("POST request failed: %w", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST请求失败，状态码: %d", resp.StatusCode)
+		return fmt.Errorf("POST request failed, status code: %d", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")
 	if location == "" {
-		return fmt.Errorf("未获取到Location header")
+		return fmt.Errorf("failed to get Location header")
 	}
 
 	return continueConfigUploadWithToken(client, configData, configDigest, registryURL, repository, location, token)

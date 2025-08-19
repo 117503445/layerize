@@ -14,27 +14,27 @@ import (
 func main() {
 	goutils.InitZeroLog()
 
-	// 加载 .env 文件
+	// Load .env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Error().Err(err).Msg("加载 .env 文件失败")
+		log.Error().Err(err).Msg("Failed to load .env file")
 		panic(err)
 	}
 
-	// 从环境变量读取认证信息
+	// Read authentication information from environment variables
 	username := os.Getenv("username")
 	password := os.Getenv("password")
 	auth := types.Auth{Username: username, Password: password}
 
 	content := goutils.TimeStrMilliSec()
 
-	// 创建文件映射，模拟 tmp/diff.tar 中的内容
+	// Create file mapping to simulate content in tmp/diff.tar
 	files := map[string][]byte{
 		"new.txt":     []byte(content),
 		".wh.old.txt": []byte(""),
 	}
 
-	// 调用 buildImageFromMap 函数执行构建操作
+	// Call buildImageFromMap function to execute build operation
 	err = builder.BuildImageFromMap(
 		files,
 		"117503445/layerize-test-base", // target image
@@ -45,18 +45,18 @@ func main() {
 		"08182357",                     // target image tag
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("buildImageFromMap 执行失败")
+		log.Error().Err(err).Msg("buildImageFromMap execution failed")
 		panic(err)
 	}
 
-	log.Info().Msg("镜像构建完成")
+	log.Info().Msg("Image build completed")
 
-	// 验证构建的镜像
+	// Validate the built image
 	err = validator.ValidateBuiltImage(content)
 	if err != nil {
-		log.Error().Err(err).Msg("镜像验证失败")
+		log.Error().Err(err).Msg("Image validation failed")
 		panic(err)
 	}
 
-	log.Info().Msg("镜像验证完成")
+	log.Info().Msg("Image validation completed")
 }

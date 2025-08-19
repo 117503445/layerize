@@ -8,21 +8,21 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// UploadUpdatedConfigToRegistry 上传更新后的配置到镜像仓库
+// UploadUpdatedConfigToRegistry uploads updated config to registry
 func UploadUpdatedConfigToRegistry(updatedConfig []byte, registryURL, repository, username, password string) error {
-	// 计算配置的 SHA256 摘要
+	// Calculate SHA256 digest of config
 	hash := sha256.Sum256(updatedConfig)
 	configDigest := fmt.Sprintf("sha256:%x", hash)
 
-	log.Info().Str("configDigest", configDigest).Int("configSize", len(updatedConfig)).Msg("开始上传更新后的配置")
+	log.Info().Str("configDigest", configDigest).Int("configSize", len(updatedConfig)).Msg("Starting to upload updated config")
 
-	// 使用 registry 包的函数上传配置
+	// Use registry package function to upload config
 	err := registry.UploadConfigToRegistryWithAuth(updatedConfig, configDigest, registryURL, repository, username, password)
 	if err != nil {
-		log.Error().Err(err).Msg("上传配置失败")
-		return fmt.Errorf("上传配置失败: %w", err)
+		log.Error().Err(err).Msg("Failed to upload config")
+		return fmt.Errorf("failed to upload config: %w", err)
 	}
 
-	log.Info().Msg("配置上传成功")
+	log.Info().Msg("Config upload successful")
 	return nil
 }

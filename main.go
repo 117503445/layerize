@@ -33,30 +33,33 @@ func main() {
 		"new.txt":     []byte(content),
 		".wh.old.txt": []byte(""),
 	}
+	for i := range 10 {
+		log.Info().Msgf("Building image TestCase %d", i)
 
-	// Call buildImageFromMap function to execute build operation
-	err = builder.BuildImageFromMap(
-		files,
-		"117503445/layerize-test-base", // target image
-		auth,                           // target auth
-		"117503445/layerize-test-base", // base image name
-		auth,                           // base image auth
-		"latest",                       // base image tag
-		"08182357",                     // target image tag
-	)
-	if err != nil {
-		log.Error().Err(err).Msg("buildImageFromMap execution failed")
-		panic(err)
+		// Call buildImageFromMap function to execute build operation
+		err = builder.BuildImageFromMap(
+			files,
+			"117503445/layerize-test-base", // target image
+			auth,                           // target auth
+			"117503445/layerize-test-base", // base image name
+			auth,                           // base image auth
+			"latest",                       // base image tag
+			"08182357",                     // target image tag
+		)
+		if err != nil {
+			log.Error().Err(err).Msg("buildImageFromMap execution failed")
+			panic(err)
+		}
+
+		log.Info().Msg("Image build completed")
+
+		// Validate the built image
+		err = validator.ValidateBuiltImage(content)
+		if err != nil {
+			log.Error().Err(err).Msg("Image validation failed")
+			panic(err)
+		}
+
+		log.Info().Msg("Image validation completed")
 	}
-
-	log.Info().Msg("Image build completed")
-
-	// Validate the built image
-	err = validator.ValidateBuiltImage(content)
-	if err != nil {
-		log.Error().Err(err).Msg("Image validation failed")
-		panic(err)
-	}
-
-	log.Info().Msg("Image validation completed")
 }

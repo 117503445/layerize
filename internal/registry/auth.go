@@ -14,10 +14,16 @@ import (
 
 // getTokenFromWWWAuth retrieves an authentication token from the WWW-Authenticate header
 func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
+	log.Info().
+		Str("wwwAuth", wwwAuth).
+		Str("username", username).
+		Msg("Starting token retrieval process")
+
 	// Parse WWW-Authenticate header
 	// Format: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/hello-world:pull"
 	
 	if !strings.HasPrefix(wwwAuth, "Bearer ") {
+		log.Error().Str("wwwAuth", wwwAuth).Msg("Unsupported authentication type")
 		return "", fmt.Errorf("unsupported auth type: %s", wwwAuth)
 	}
 
@@ -37,8 +43,15 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	}
 
 	if realm == "" {
+		log.Error().Msg("Realm parameter not found in WWW-Authenticate header")
 		return "", fmt.Errorf("realm parameter not found")
 	}
+
+	log.Info().
+		Str("realm", realm).
+		Str("service", service).
+		Str("originalScope", scope).
+		Msg("Parsed authentication parameters")
 
 	// Build auth URL
 	authURL := realm
@@ -50,7 +63,12 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	if scope != "" {
 		// If original scope only contains pull, we need to add push permissions
 		if strings.Contains(scope, ":pull") && !strings.Contains(scope, ":push") {
+			originalScope := scope
 			scope = strings.Replace(scope, ":pull", ":push,pull", 1)
+			log.Info().
+				Str("originalScope", originalScope).
+				Str("modifiedScope", scope).
+				Msg("Modified scope to include push permissions")
 		}
 		params = append(params, "scope="+url.QueryEscape(scope))
 	}
@@ -59,7 +77,7 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 		authURL += "?" + strings.Join(params, "&")
 	}
 
-	log.Info().Str("authURL", authURL).Str("scope", scope).Msg("Requesting authentication token")
+	log.Info().Str("authURL", authURL).Str("finalScope", scope).Msg("Requesting authentication token")
 
 	// Request token
 	req, err := http.NewRequest("GET", authURL, nil)
@@ -102,6 +120,8 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 		return "", fmt.Errorf("no valid token received")
 	}
 
-	log.Info().Msg("Successfully obtained authentication token")
+	log.Info().
+		Str("token", token).
+		Msg("Successfully obtained authentication token")
 	return token, nil
 }

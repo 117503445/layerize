@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -9,7 +10,7 @@ import (
 )
 
 // ValidateBuiltImage validates if the built image is correct
-func ValidateBuiltImage(content string) error {
+func ValidateBuiltImage(ctx context.Context, content string) error {
 	// Add podman test
 	// podman pull registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357 && podman run -it --rm --entrypoint sh registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357
 	// Require new.txt to exist with content as content. old.txt should not exist.

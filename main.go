@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/117503445/goutils"
@@ -26,6 +27,7 @@ func main() {
 	password := os.Getenv("password")
 	auth := types.Auth{Username: username, Password: password}
 
+	ctx := context.Background()
 	content := goutils.TimeStrMilliSec()
 
 	// Create file mapping to simulate content in tmp/diff.tar
@@ -38,6 +40,7 @@ func main() {
 
 		// Call buildImageFromMap function to execute build operation
 		err = builder.BuildImageFromMap(
+			ctx,
 			files,
 			"117503445/layerize-test-base", // target image
 			auth,                           // target auth
@@ -54,7 +57,7 @@ func main() {
 		log.Info().Msg("Image build completed")
 
 		// Validate the built image
-		err = validator.ValidateBuiltImage(content)
+		err = validator.ValidateBuiltImage(ctx, content)
 		if err != nil {
 			log.Error().Err(err).Msg("Image validation failed")
 			panic(err)

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,7 +9,7 @@ import (
 )
 
 // GetManifestWithAuth retrieves image manifest with authentication
-func GetManifestWithAuth(registryURL, repository, reference, username, password string) ([]byte, string, error) {
+func GetManifestWithAuth(ctx context.Context, registryURL, repository, reference, username, password string) ([]byte, string, error) {
 	// Ensure registryURL does not end with /
 	registryURL = strings.TrimSuffix(registryURL, "/")
 
@@ -16,7 +17,7 @@ func GetManifestWithAuth(registryURL, repository, reference, username, password 
 	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", registryURL, repository, reference)
 
 	// Try without authentication first
-	req, err := http.NewRequest("GET", manifestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -40,11 +41,11 @@ func GetManifestWithAuth(registryURL, repository, reference, username, password 
 		wwwAuth := resp.Header.Get("WWW-Authenticate")
 		if strings.HasPrefix(wwwAuth, "Bearer") && username != "" && password != "" {
 			// Use Bearer token authentication
-			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
+			token, err := getTokenFromWWWAuth(ctx, wwwAuth, username, password)
 			if err != nil {
 				return nil, "", fmt.Errorf("failed to get token: %w", err)
 			}
-			return getManifestWithToken(client, manifestURL, token)
+			return getManifestWithToken(ctx, client, manifestURL, token)
 		}
 	}
 
@@ -53,8 +54,8 @@ func GetManifestWithAuth(registryURL, repository, reference, username, password 
 }
 
 // getManifestWithToken retrieves manifest using token authentication
-func getManifestWithToken(client *http.Client, manifestURL, token string) ([]byte, string, error) {
-	req, err := http.NewRequest("GET", manifestURL, nil)
+func getManifestWithToken(ctx context.Context, client *http.Client, manifestURL, token string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", manifestURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}

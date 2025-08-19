@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -15,7 +16,8 @@ func TestCalculateFileSHA256(t *testing.T) {
 	goutils.InitZeroLog()
 
 	// Test using existing ./tmp/diff.tar.gz file
-	hash, err := utils.CalculateFileSHA256("./tmp/diff.tar.gz")
+	ctx := context.Background()
+	hash, err := utils.CalculateFileSHA256(ctx, "./tmp/diff.tar.gz")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
@@ -36,7 +38,7 @@ func TestCalculateFileSHA256(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Calculate file SHA256
-	hash, err = utils.CalculateFileSHA256(tmpfile.Name())
+	hash, err = utils.CalculateFileSHA256(ctx, tmpfile.Name())
 	assert.NoError(t, err)
 	assert.NotEmpty(t, hash)
 
@@ -45,6 +47,6 @@ func TestCalculateFileSHA256(t *testing.T) {
 	assert.Equal(t, expectedHash, hash)
 
 	// Test non-existent file
-	_, err = utils.CalculateFileSHA256("non-existent-file.txt")
+	_, err = utils.CalculateFileSHA256(ctx, "non-existent-file.txt")
 	assert.Error(t, err)
 }

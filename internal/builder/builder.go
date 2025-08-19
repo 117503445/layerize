@@ -18,9 +18,9 @@ import (
 )
 
 // BuildImageFromMap creates a tar from file mapping, compresses it to tar.gz, and then builds an image
-func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
+func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
 	// Create tar byte array using MapToTar
-	tarData, err := utils.MapToTar(files)
+	tarData, err := utils.MapToTar(ctx, files)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create tar data")
 		return fmt.Errorf("failed to create tar data: %w", err)
@@ -50,13 +50,13 @@ func BuildImageFromMap(files map[string][]byte, targetImage string, targetAuth t
 		TargetImageTag:  targetImageTag,
 	}
 
-	return BuildImage(params)
+	return BuildImage(ctx, params)
 }
 
 // BuildImage encapsulates the complete image building process
 // Parameters:
 // - params: BuildImageParams struct containing all parameters needed to build the image
-func BuildImage(params types.BuildImageParams) error {
+func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	goutils.InitZeroLog()
 
 	log.Info().
@@ -80,14 +80,14 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Decompress diffTarGzData to get uncompressed data
-	diffTarData, err := utils.DecompressGzipData(diffTarGzData)
+	diffTarData, err := utils.DecompressGzipData(ctx, diffTarGzData)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decompress diffTar data")
 		return err
 	}
 
 	// Calculate SHA256 of uncompressed diff.tar to use as diffID
-	diffSha256sum, err := utils.CalculateDataSHA256(diffTarData)
+	diffSha256sum, err := utils.CalculateDataSHA256(ctx, diffTarData)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to calculate diff.tar SHA256")
 		return err
@@ -126,7 +126,7 @@ func BuildImage(params types.BuildImageParams) error {
 	defer file.Close()
 
 	// Calculate SHA256 of the compressed file
-	sha256sum, err := utils.CalculateFileSHA256(tmpFile.Name())
+	sha256sum, err := utils.CalculateFileSHA256(ctx, tmpFile.Name())
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to calculate compressed file SHA256")
 		return err
@@ -151,7 +151,7 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Get base image configuration information
-	baseConfig, err := registry.GetConfigWithAuth(registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	baseConfig, err := registry.GetConfigWithAuth(ctx, registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get config")
 		return err
@@ -161,7 +161,7 @@ func BuildImage(params types.BuildImageParams) error {
 	log.Debug().RawJSON("config", baseConfig).Msg("Config content")
 
 	// Call UpdateOCIConfig to update config, using diff.tar's sha256 as diffID
-	updatedConfig, err = manifest.UpdateOCIConfig(baseConfig, "sha256:"+diffSha256sum)
+	updatedConfig, err = manifest.UpdateOCIConfig(ctx, baseConfig, "sha256:"+diffSha256sum)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to update config")
 		return err
@@ -172,7 +172,7 @@ func BuildImage(params types.BuildImageParams) error {
 
 	// Upload the updated config using centralized client
 	// Calculate SHA256 digest of the updated config (for upload)
-	uploadConfigSHA256, err := utils.CalculateDataSHA256(updatedConfig)
+	uploadConfigSHA256, err := utils.CalculateDataSHA256(ctx, updatedConfig)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to calculate config SHA256 for upload")
 		return err
@@ -194,7 +194,7 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Get base image manifest example
-	manifestData, contentType, err := registry.GetManifestWithAuth(registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+	manifestData, contentType, err := registry.GetManifestWithAuth(ctx, registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get manifest")
 		return err
@@ -205,7 +205,7 @@ func BuildImage(params types.BuildImageParams) error {
 	log.Debug().RawJSON("manifest", manifestData).Msg("Manifest content")
 
 	// Calculate SHA256 digest of the updated config
-	configSHA256, err := utils.CalculateDataSHA256(updatedConfig)
+	configSHA256, err := utils.CalculateDataSHA256(ctx, updatedConfig)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to calculate config SHA256")
 		return err
@@ -233,7 +233,7 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Call updateOCIManifest to update manifest
-	updatedManifest, err := manifest.UpdateOCIManifest(updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
+	updatedManifest, err := manifest.UpdateOCIManifest(ctx, updatedManifestWithNewConfig, "sha256:"+sha256sum, fileSize, "")
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to update manifest")
 		return err
@@ -249,7 +249,7 @@ func BuildImage(params types.BuildImageParams) error {
 	}
 
 	// Upload the updated manifest to the target registry using existing client
-	err = targetClient.UploadManifest(context.Background(), params.TargetImage, targetImageTag, updatedManifest, contentType)
+	err = targetClient.UploadManifest(ctx, params.TargetImage, targetImageTag, updatedManifest, contentType)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload updated manifest")
 		return err

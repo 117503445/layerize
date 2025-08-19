@@ -112,7 +112,7 @@ func UploadConfigWithClient(client *Client, configData []byte, configDigest, rep
 			Msg("Config upload failed")
 		// If we get 401, invalidate the token
 		if putResp.StatusCode == http.StatusUnauthorized {
-			client.InvalidateToken(scope)
+			client.InvalidateToken(ctx, scope)
 		}
 		return fmt.Errorf("config upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -8,7 +9,7 @@ import (
 )
 
 // CalculateFileSHA256 calculates SHA256 hash of a file
-func CalculateFileSHA256(filePath string) (string, error) {
+func CalculateFileSHA256(ctx context.Context, filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
@@ -25,7 +26,7 @@ func CalculateFileSHA256(filePath string) (string, error) {
 }
 
 // CalculateDataSHA256 calculates SHA256 hash of byte data
-func CalculateDataSHA256(data []byte) (string, error) {
+func CalculateDataSHA256(ctx context.Context, data []byte) (string, error) {
 	hash := sha256.New()
 	if _, err := hash.Write(data); err != nil {
 		return "", fmt.Errorf("failed to calculate hash: %w", err)

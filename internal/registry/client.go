@@ -32,7 +32,7 @@ type Client struct {
 }
 
 // IsExpired checks if token is expired
-func (t *Token) IsExpired() bool {
+func (t *Token) IsExpired(ctx context.Context) bool {
 	// Handle tokens with expires_in=0 - treat them as long-lived (1 hour default)
 	expiresIn := t.ExpiresIn
 	if expiresIn <= 0 {
@@ -83,11 +83,11 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 		Bool("token_exists", exists).
 		Msg("Checking token cache")
 
-	if !exists || token.IsExpired() {
+	if !exists || token.IsExpired(ctx) {
 		log.Info().
 			Str("scope", scope).
 			Bool("existed", exists).
-			Bool("expired", exists && token.IsExpired()).
+			Bool("expired", exists && token.IsExpired(ctx)).
 			Msg("Fetching new token")
 		
 		var err error
@@ -110,7 +110,7 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 }
 
 // InvalidateToken removes a token from cache (useful when receiving 401 errors)
-func (c *Client) InvalidateToken(scope string) {
+func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 	c.tokenMutex.Lock()
 	defer c.tokenMutex.Unlock()
 	
@@ -260,7 +260,7 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 		body, _ := io.ReadAll(resp.Body)
 		// If we get 401, invalidate the token
 		if resp.StatusCode == http.StatusUnauthorized {
-			c.InvalidateToken(scope)
+			c.InvalidateToken(ctx, scope)
 		}
 		return fmt.Errorf("failed to upload manifest, status code: %d, response: %s", resp.StatusCode, string(body))
 	}

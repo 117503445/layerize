@@ -111,7 +111,7 @@ func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, reposito
 			Msg("Layer upload failed")
 		// If we get 401, invalidate the token
 		if putResp.StatusCode == http.StatusUnauthorized {
-			client.InvalidateToken(scope)
+			client.InvalidateToken(ctx, scope)
 		}
 		return fmt.Errorf("layer upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}

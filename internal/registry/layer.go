@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -11,7 +12,7 @@ import (
 )
 
 // UploadLayerToRegistryWithAuth uploads layer to registry with authentication
-func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
+func UploadLayerToRegistryWithAuth(ctx context.Context, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
 	// Ensure registryURL does not end with /
 	registryURL = strings.TrimSuffix(registryURL, "/")
 
@@ -23,7 +24,7 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 
 		// First try POST request to see if authentication is required
 		postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-		req, err := http.NewRequest("POST", postURL, nil)
+		req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create POST request: %w", err)
 		}
@@ -38,15 +39,15 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 			wwwAuth := resp.Header.Get("WWW-Authenticate")
 			if strings.HasPrefix(wwwAuth, "Bearer") {
 				// Use Bearer token authentication
-				token, err := getTokenFromWWWAuth(wwwAuth, username, password)
+				token, err := getTokenFromWWWAuth(ctx, wwwAuth, username, password)
 				if err != nil {
 					log.Error().Err(err).Msg("Failed to get token")
 					return fmt.Errorf("failed to get token: %w", err)
 				}
-				return uploadLayerWithToken(client, reader, sha256sum, registryURL, repository, token)
+				return uploadLayerWithToken(ctx, client, reader, sha256sum, registryURL, repository, token)
 			} else {
 				// Use basic authentication
-				return uploadLayerWithBasicAuth(client, reader, sha256sum, registryURL, repository, username, password)
+				return uploadLayerWithBasicAuth(ctx, client, reader, sha256sum, registryURL, repository, username, password)
 			}
 		} else if resp.StatusCode == http.StatusAccepted {
 			// No authentication required, upload directly
@@ -54,7 +55,7 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 			if location == "" {
 				return fmt.Errorf("failed to get Location header")
 			}
-			return continueUpload(client, reader, sha256sum, registryURL, repository, location)
+			return continueUpload(ctx, client, reader, sha256sum, registryURL, repository, location)
 		} else {
 			return fmt.Errorf("POST request returned unexpected status code: %d", resp.StatusCode)
 		}
@@ -64,10 +65,10 @@ func UploadLayerToRegistryWithAuth(reader io.Reader, sha256sum, registryURL, rep
 }
 
 // uploadLayerWithToken uploads layer using token authentication
-func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, token string) error {
+func uploadLayerWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, token string) error {
 	// Start upload
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	req, err := http.NewRequest("POST", postURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create POST request: %w", err)
 	}
@@ -89,11 +90,11 @@ func uploadLayerWithToken(client *http.Client, reader io.Reader, sha256sum, regi
 		return fmt.Errorf("failed to get Location header")
 	}
 
-	return continueUploadWithToken(client, reader, sha256sum, registryURL, repository, location, token)
+	return continueUploadWithToken(ctx, client, reader, sha256sum, registryURL, repository, location, token)
 }
 
 // continueUploadWithToken continues upload using token authentication
-func continueUploadWithToken(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string, token string) error {
+func continueUploadWithToken(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string, token string) error {
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -109,7 +110,7 @@ func continueUploadWithToken(client *http.Client, reader io.Reader, sha256sum, r
 
 	log.Info().Str("uploadURL", uploadURL).Msg("Uploading layer data")
 
-	req, err := http.NewRequest("PUT", uploadURL, reader)
+	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, reader)
 	if err != nil {
 		return fmt.Errorf("failed to create PUT request: %w", err)
 	}
@@ -133,10 +134,10 @@ func continueUploadWithToken(client *http.Client, reader io.Reader, sha256sum, r
 }
 
 // uploadLayerWithBasicAuth uploads layer using basic authentication
-func uploadLayerWithBasicAuth(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
+func uploadLayerWithBasicAuth(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, username, password string) error {
 	// Start upload
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	req, err := http.NewRequest("POST", postURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create POST request: %w", err)
 	}
@@ -159,11 +160,11 @@ func uploadLayerWithBasicAuth(client *http.Client, reader io.Reader, sha256sum, 
 		return fmt.Errorf("failed to get Location header")
 	}
 
-	return continueUpload(client, reader, sha256sum, registryURL, repository, location)
+	return continueUpload(ctx, client, reader, sha256sum, registryURL, repository, location)
 }
 
 // continueUpload continues upload without authentication
-func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string) error {
+func continueUpload(ctx context.Context, client *http.Client, reader io.Reader, sha256sum, registryURL, repository, location string) error {
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -179,7 +180,7 @@ func continueUpload(client *http.Client, reader io.Reader, sha256sum, registryUR
 
 	log.Info().Str("uploadURL", uploadURL).Msg("Uploading layer data")
 
-	req, err := http.NewRequest("PUT", uploadURL, reader)
+	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, reader)
 	if err != nil {
 		return fmt.Errorf("failed to create PUT request: %w", err)
 	}

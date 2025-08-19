@@ -4,12 +4,13 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 )
 
 // MapToTar converts file mapping to tar format byte array
-func MapToTar(files map[string][]byte) ([]byte, error) {
+func MapToTar(ctx context.Context, files map[string][]byte) ([]byte, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
@@ -35,7 +36,7 @@ func MapToTar(files map[string][]byte) ([]byte, error) {
 }
 
 // DecompressGzipData decompresses gzip data
-func DecompressGzipData(data []byte) ([]byte, error) {
+func DecompressGzipData(ctx context.Context, data []byte) ([]byte, error) {
 	reader := bytes.NewReader(data)
 	gzipReader, err := gzip.NewReader(reader)
 	if err != nil {

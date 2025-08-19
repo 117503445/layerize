@@ -2,6 +2,7 @@ package registry
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -15,9 +16,9 @@ import (
 )
 
 // GetConfigWithAuth retrieves image config with authentication
-func GetConfigWithAuth(registryURL, repository, reference, username, password string) ([]byte, error) {
+func GetConfigWithAuth(ctx context.Context, registryURL, repository, reference, username, password string) ([]byte, error) {
 	// First get the manifest
-	manifest, _, err := GetManifestWithAuth(registryURL, repository, reference, username, password)
+	manifest, _, err := GetManifestWithAuth(ctx, registryURL, repository, reference, username, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get manifest: %w", err)
 	}
@@ -45,7 +46,7 @@ func GetConfigWithAuth(registryURL, repository, reference, username, password st
 	configURL := fmt.Sprintf("%s/v2/%s/blobs/%s", registryURL, repository, configDigest)
 
 	// Try without authentication first
-	req, err := http.NewRequest("GET", configURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", configURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -64,11 +65,11 @@ func GetConfigWithAuth(registryURL, repository, reference, username, password st
 		wwwAuth := resp.Header.Get("WWW-Authenticate")
 		if strings.HasPrefix(wwwAuth, "Bearer") && username != "" && password != "" {
 			// Use Bearer token authentication
-			token, err := getTokenFromWWWAuth(wwwAuth, username, password)
+			token, err := getTokenFromWWWAuth(ctx, wwwAuth, username, password)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get token: %w", err)
 			}
-			return getConfigWithToken(client, configURL, token)
+			return getConfigWithToken(ctx, client, configURL, token)
 		}
 	}
 
@@ -77,8 +78,8 @@ func GetConfigWithAuth(registryURL, repository, reference, username, password st
 }
 
 // getConfigWithToken retrieves config using token authentication
-func getConfigWithToken(client *http.Client, configURL, token string) ([]byte, error) {
-	req, err := http.NewRequest("GET", configURL, nil)
+func getConfigWithToken(ctx context.Context, client *http.Client, configURL, token string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", configURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -100,7 +101,7 @@ func getConfigWithToken(client *http.Client, configURL, token string) ([]byte, e
 }
 
 // UploadConfigToRegistryWithAuth uploads config to image registry with authentication
-func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL, repository, username, password string) error {
+func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, configDigest, registryURL, repository, username, password string) error {
 	log.Info().
 		Str("registryURL", registryURL).
 		Str("repository", repository).
@@ -128,10 +129,10 @@ func UploadConfigToRegistryWithAuth(configData []byte, configDigest, registryURL
 }
 
 // uploadConfigWithBasicAuth uploads config using basic authentication
-func uploadConfigWithBasicAuth(client *http.Client, configData []byte, configDigest, registryURL, repository, username, password string) error {
+func uploadConfigWithBasicAuth(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, username, password string) error {
 	// Start upload
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	req, err := http.NewRequest("POST", postURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create POST request: %w", err)
 	}
@@ -154,14 +155,14 @@ func uploadConfigWithBasicAuth(client *http.Client, configData []byte, configDig
 		return fmt.Errorf("failed to get Location header")
 	}
 
-	return continueConfigUploadWithBasicAuth(client, configData, configDigest, registryURL, repository, location, username, password)
+	return continueConfigUploadWithBasicAuth(ctx, client, configData, configDigest, registryURL, repository, location, username, password)
 }
 
 // uploadConfigWithToken uploads config using token authentication
-func uploadConfigWithToken(client *http.Client, configData []byte, configDigest, registryURL, repository, token string) error {
+func uploadConfigWithToken(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, token string) error {
 	// Start upload
 	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	req, err := http.NewRequest("POST", postURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create POST request: %w", err)
 	}
@@ -183,11 +184,11 @@ func uploadConfigWithToken(client *http.Client, configData []byte, configDigest,
 		return fmt.Errorf("failed to get Location header")
 	}
 
-	return continueConfigUploadWithToken(client, configData, configDigest, registryURL, repository, location, token)
+	return continueConfigUploadWithToken(ctx, client, configData, configDigest, registryURL, repository, location, token)
 }
 
 // continueConfigUploadWithBasicAuth continues config upload using basic authentication
-func continueConfigUploadWithBasicAuth(client *http.Client, configData []byte, configDigest, registryURL, repository, location, username, password string) error {
+func continueConfigUploadWithBasicAuth(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, location, username, password string) error {
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -203,7 +204,7 @@ func continueConfigUploadWithBasicAuth(client *http.Client, configData []byte, c
 
 	log.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
 
-	req, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(configData))
+	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, bytes.NewReader(configData))
 	if err != nil {
 		return fmt.Errorf("failed to create PUT request: %w", err)
 	}
@@ -229,7 +230,7 @@ func continueConfigUploadWithBasicAuth(client *http.Client, configData []byte, c
 }
 
 // continueConfigUploadWithToken continues config upload using token authentication
-func continueConfigUploadWithToken(client *http.Client, configData []byte, configDigest, registryURL, repository, location, token string) error {
+func continueConfigUploadWithToken(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, location, token string) error {
 	// If location is relative path, convert to absolute path
 	uploadURL := location
 	if strings.HasPrefix(location, "/") {
@@ -245,7 +246,7 @@ func continueConfigUploadWithToken(client *http.Client, configData []byte, confi
 
 	log.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
 
-	req, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(configData))
+	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, bytes.NewReader(configData))
 	if err != nil {
 		return fmt.Errorf("failed to create PUT request: %w", err)
 	}

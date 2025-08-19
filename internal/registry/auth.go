@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 )
 
 // getTokenFromWWWAuth retrieves an authentication token from the WWW-Authenticate header
-func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
+func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string) (string, error) {
 	log.Info().
 		Str("wwwAuth", wwwAuth).
 		Str("username", username).
@@ -84,7 +85,7 @@ func getTokenFromWWWAuth(wwwAuth, username, password string) (string, error) {
 	log.Info().Str("authURL", authURL).Str("finalScope", scope).Msg("Requesting authentication token")
 
 	// Request token
-	req, err := http.NewRequest("GET", authURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create auth request: %w", err)
 	}

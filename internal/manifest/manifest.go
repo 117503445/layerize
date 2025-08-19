@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 )
@@ -44,7 +45,7 @@ type OCIManifest struct {
 
 // UpdateManifest adds a new layer to the manifest.
 // It detects whether the manifest is Docker v2 or OCI and handles accordingly.
-func UpdateManifest(originalManifest []byte, newLayerDigest string, newLayerSize int64, mediaType string) ([]byte, string, error) {
+func UpdateManifest(ctx context.Context, originalManifest []byte, newLayerDigest string, newLayerSize int64, mediaType string) ([]byte, string, error) {
 	// Detect manifest type by MediaType
 	var generic struct {
 		MediaType string `json:"mediaType"`
@@ -58,9 +59,9 @@ func UpdateManifest(originalManifest []byte, newLayerDigest string, newLayerSize
 
 	switch generic.MediaType {
 	case MediaTypeDockerManifest:
-		newManifest, err = UpdateDockerManifestV2(originalManifest, newLayerDigest, newLayerSize, mediaType)
+		newManifest, err = UpdateDockerManifestV2(ctx, originalManifest, newLayerDigest, newLayerSize, mediaType)
 	case MediaTypeOCIManifest:
-		newManifest, err = UpdateOCIManifest(originalManifest, newLayerDigest, newLayerSize, mediaType)
+		newManifest, err = UpdateOCIManifest(ctx, originalManifest, newLayerDigest, newLayerSize, mediaType)
 	default:
 		return nil, "", fmt.Errorf("unsupported manifest mediaType: %s", generic.MediaType)
 	}
@@ -73,7 +74,7 @@ func UpdateManifest(originalManifest []byte, newLayerDigest string, newLayerSize
 }
 
 // UpdateDockerManifestV2 handles Docker v2 Schema 2 manifest
-func UpdateDockerManifestV2(original []byte, digest string, size int64, mediaType string) ([]byte, error) {
+func UpdateDockerManifestV2(ctx context.Context, original []byte, digest string, size int64, mediaType string) ([]byte, error) {
 	var manifest DockerManifestV2
 	if err := json.Unmarshal(original, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal docker manifest: %w", err)
@@ -97,7 +98,7 @@ func UpdateDockerManifestV2(original []byte, digest string, size int64, mediaTyp
 }
 
 // UpdateOCIManifest handles OCI Image Manifest
-func UpdateOCIManifest(original []byte, digest string, size int64, mediaType string) ([]byte, error) {
+func UpdateOCIManifest(ctx context.Context, original []byte, digest string, size int64, mediaType string) ([]byte, error) {
 	var manifest OCIManifest
 	if err := json.Unmarshal(original, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal OCI manifest: %w", err)
@@ -124,7 +125,7 @@ func UpdateOCIManifest(original []byte, digest string, size int64, mediaType str
 // UpdateOCIConfig updates an OCI image config with a new layer diffID
 // config: the original OCI image config as byte slice
 // diffID: the diffID of the new layer to be added
-func UpdateOCIConfig(config []byte, diffID string) ([]byte, error) {
+func UpdateOCIConfig(ctx context.Context, config []byte, diffID string) ([]byte, error) {
 	// Use map[string]any to parse JSON, which preserves all fields
 	var imageConfig map[string]any
 

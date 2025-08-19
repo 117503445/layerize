@@ -1,15 +1,12 @@
 package registry
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -103,7 +100,7 @@ func getConfigWithToken(ctx context.Context, client *http.Client, configURL, tok
 // UploadConfigToRegistryWithAuth uploads config to image registry with authentication
 func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, configDigest, registryURL, repository, username, password string) error {
 	logger := log.Ctx(ctx)
-	
+
 	logger.Info().
 		Str("registryURL", registryURL).
 		Str("repository", repository).
@@ -114,11 +111,11 @@ func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, conf
 
 	// Use centralized client for better token management
 	client := NewClient(registryURL, username, password)
-	
+
 	// Calculate SHA256 of config data for upload
 	hash := sha256.Sum256(configData)
 	calculatedDigest := fmt.Sprintf("sha256:%x", hash)
-	
+
 	if configDigest != calculatedDigest {
 		logger.Warn().
 			Str("provided_digest", configDigest).
@@ -128,150 +125,4 @@ func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, conf
 	}
 
 	return UploadConfigWithClient(client, configData, configDigest, repository)
-}
-
-// uploadConfigWithBasicAuth uploads config using basic authentication
-func uploadConfigWithBasicAuth(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, username, password string) error {
-	// Start upload
-	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create POST request: %w", err)
-	}
-
-	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-	req.Header.Set("Authorization", "Basic "+auth)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST request failed: %w", err)
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST request failed, status code: %d", resp.StatusCode)
-	}
-
-	location := resp.Header.Get("Location")
-	if location == "" {
-		return fmt.Errorf("failed to get Location header")
-	}
-
-	return continueConfigUploadWithBasicAuth(ctx, client, configData, configDigest, registryURL, repository, location, username, password)
-}
-
-// uploadConfigWithToken uploads config using token authentication
-func uploadConfigWithToken(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, token string) error {
-	// Start upload
-	postURL := fmt.Sprintf("%s/v2/%s/blobs/uploads/", registryURL, repository)
-	req, err := http.NewRequestWithContext(ctx, "POST", postURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create POST request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST request failed: %w", err)
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("POST request failed, status code: %d", resp.StatusCode)
-	}
-
-	location := resp.Header.Get("Location")
-	if location == "" {
-		return fmt.Errorf("failed to get Location header")
-	}
-
-	return continueConfigUploadWithToken(ctx, client, configData, configDigest, registryURL, repository, location, token)
-}
-
-// continueConfigUploadWithBasicAuth continues config upload using basic authentication
-func continueConfigUploadWithBasicAuth(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, location, username, password string) error {
-	logger := log.Ctx(ctx)
-	
-	// If location is relative path, convert to absolute path
-	uploadURL := location
-	if strings.HasPrefix(location, "/") {
-		uploadURL = registryURL + location
-	}
-
-	// Add digest parameter
-	if strings.Contains(uploadURL, "?") {
-		uploadURL += "&digest=" + configDigest
-	} else {
-		uploadURL += "?digest=" + configDigest
-	}
-
-	logger.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, bytes.NewReader(configData))
-	if err != nil {
-		return fmt.Errorf("failed to create PUT request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Content-Length", strconv.Itoa(len(configData)))
-	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-	req.Header.Set("Authorization", "Basic "+auth)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("PUT request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upload failed, status code: %d, response: %s", resp.StatusCode, string(body))
-	}
-
-	logger.Info().Msg("Config upload successful")
-	return nil
-}
-
-// continueConfigUploadWithToken continues config upload using token authentication
-func continueConfigUploadWithToken(ctx context.Context, client *http.Client, configData []byte, configDigest, registryURL, repository, location, token string) error {
-	logger := log.Ctx(ctx)
-	
-	// If location is relative path, convert to absolute path
-	uploadURL := location
-	if strings.HasPrefix(location, "/") {
-		uploadURL = registryURL + location
-	}
-
-	// Add digest parameter
-	if strings.Contains(uploadURL, "?") {
-		uploadURL += "&digest=" + configDigest
-	} else {
-		uploadURL += "?digest=" + configDigest
-	}
-
-	logger.Info().Str("uploadURL", uploadURL).Msg("Uploading config data")
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", uploadURL, bytes.NewReader(configData))
-	if err != nil {
-		return fmt.Errorf("failed to create PUT request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Content-Length", strconv.Itoa(len(configData)))
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("PUT request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upload failed, status code: %d, response: %s", resp.StatusCode, string(body))
-	}
-
-	logger.Info().Msg("Config upload successful")
-	return nil
 }

@@ -47,25 +47,21 @@ func main() {
     logger.Info().
         Str("phase", "build").
         Int("step", 0).
-        Str("target_image", "117503445/layerize-test-base").
-        Str("target_tag", "08182357").
-        Str("base_image", "117503445/layerize-test-base").
-        Str("base_tag", "latest").
+        Str("target_image", "117503445/layerize-test-base:08182357").
+        Str("base_image", "117503445/layerize-test-base:latest").
         Msg("Ready to start image building")
 	for i := range 1 {
         logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
 
-		// Call buildImageFromMap function to execute build operation
-		err = builder.BuildImageFromMap(
-			ctx,
-			files,
-			"117503445/layerize-test-base", // target image
-			auth,                           // target auth
-			"117503445/layerize-test-base", // base image name
-			auth,                           // base image auth
-			"latest",                       // base image tag
-			"08182357",                     // target image tag
-		)
+        // Call buildImageFromMap function to execute build operation
+        err = builder.BuildImageFromMap(
+            ctx,
+            files,
+            "117503445/layerize-test-base:08182357", // target image (with tag)
+            auth,                                      // target auth
+            "117503445/layerize-test-base:latest",    // base image (with tag)
+            auth,                                      // base image auth
+        )
 		if err != nil {
 			logger.Error().Err(err).Msg("buildImageFromMap execution failed")
 			panic(err)

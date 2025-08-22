@@ -150,12 +150,11 @@ Layerize 是一个用于构建 OCI 镜像的工具，它通过向现有基础镜
 流程开始时，函数接收以下参数：
 - `ctx`: 上下文对象
 - `files`: 文件映射 (map[string][]byte)
-- `targetImage`: 目标镜像名称
+- `targetImage`: 目标镜像引用（`repository[:tag]`）
 - `targetAuth`: 目标镜像仓库认证信息
-- `baseImageName`: 基础镜像名称
+- `baseImage`: 基础镜像引用（`repository[:tag]`）
 - `baseImageAuth`: 基础镜像仓库认证信息
-- `baseImageTag`: 基础镜像标签
-- `targetImageTag`: 目标镜像标签
+（不再单独传递标签，若未提供标签，默认 `latest`）
 
 ### 2. 创建 TAR 数据
 
@@ -192,16 +191,14 @@ if err := gzWriter.Close(); err != nil {
 
 ```go
 params := types.BuildImageParams{
-    BaseImageName:    baseImageName,
+    BaseImage:        baseImage,       // e.g. "namespace/repo:latest"
     BaseImageAuth:    baseImageAuth,
     DiffTarGzReader:  bytes.NewReader(gzData.Bytes()),
     DiffTarLen:       int64(gzData.Len()),
     DiffTarSHA256:    diffTarSHA256,    // 未压缩 tar 的 SHA256（diffID）
     DiffTarGzSHA256:  diffTarGzSHA256,  // 压缩层 blob 的 SHA256
-    TargetImage:      targetImage,
+    TargetImage:      targetImage,     // e.g. "namespace/repo:tag"
     TargetAuth:       targetAuth,
-    BaseImageTag:     baseImageTag,
-    TargetImageTag:   targetImageTag,
 }
 
 return BuildImage(ctx, params)

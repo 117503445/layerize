@@ -19,15 +19,13 @@ import (
 // Parameters:
 // - ctx: context for the operation
 // - files: map of file paths to file content bytes
-// - targetImage: the target image repository name
+// - targetImage: the target image reference (repository[:tag])
 // - targetAuth: authentication information for the target registry
-// - baseImageName: the base image repository name
+// - baseImage: the base image reference (repository[:tag])
 // - baseImageAuth: authentication information for the base image registry
-// - baseImageTag: tag of the base image
-// - targetImageTag: tag for the target image
 // Returns:
 // - error: any error that occurred during the build process
-func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage string, targetAuth types.Auth, baseImageName string, baseImageAuth types.Auth, baseImageTag string, targetImageTag string) error {
+func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage string, targetAuth types.Auth, baseImage string, baseImageAuth types.Auth) error {
 	logger := log.Ctx(ctx)
 	
 	// Create tar byte array using MapToTar
@@ -61,19 +59,17 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
         return err
     }
 
-	// Call BuildImage
-	params := types.BuildImageParams{
-		BaseImageName:   baseImageName,
-		BaseImageAuth:   baseImageAuth,
-		DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
-		DiffTarLen:      int64(gzData.Len()),
+    // Call BuildImage
+    params := types.BuildImageParams{
+        BaseImage:       baseImage,
+        BaseImageAuth:   baseImageAuth,
+        DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
+        DiffTarLen:      int64(gzData.Len()),
         DiffTarSHA256:   diffTarSHA256,
         DiffTarGzSHA256: diffTarGzSHA256,
-		TargetImage:     targetImage,
-		TargetAuth:      targetAuth,
-		BaseImageTag:    baseImageTag,
-		TargetImageTag:  targetImageTag,
-	}
+        TargetImage:     targetImage,
+        TargetAuth:      targetAuth,
+    }
 
 	return BuildImage(ctx, params)
 }
@@ -88,13 +84,17 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	logger := log.Ctx(ctx)
 	goutils.InitZeroLog()
 
+    // Parse image references
+    baseRepository, baseTag := splitRepositoryAndTag(params.BaseImage)
+    targetRepository, targetTag := splitRepositoryAndTag(params.TargetImage)
+
     logger.Info().
         Str("phase", "build").
         Int("step", 0).
-        Str("base_image", params.BaseImageName).
-        Str("target_image", params.TargetImage).
-        Str("base_tag", params.BaseImageTag).
-        Str("target_tag", params.TargetImageTag).
+        Str("base_image", baseRepository).
+        Str("target_image", targetRepository).
+        Str("base_tag", baseTag).
+        Str("target_tag", targetTag).
         Int64("diff_tar_gz_len", params.DiffTarLen).
         Msg("Start image building process")
 
@@ -112,7 +112,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
     logger.Info().Str("phase", "build").Int("step", 1).Int64("compressed_size", fileSize).Msg("Using provided compressed layer size")
 
     // Upload layer to target image registry using centralized client (streaming reader)
-    err := registry.UploadLayerWithClient(targetClient, params.DiffTarGzReader, params.DiffTarGzSHA256, params.TargetImage)
+    err := registry.UploadLayerWithClient(targetClient, params.DiffTarGzReader, params.DiffTarGzSHA256, targetRepository)
 	if err != nil {
 		logger.Error().Err(err).Msg("UploadLayerWithClient failed")
 		return err
@@ -123,15 +123,9 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	// Declare updatedConfig variable
 	var updatedConfig []byte
 
-	// Determine base image tag
-	baseImageTag := "latest"
-	if params.BaseImageTag != "" {
-		baseImageTag = params.BaseImageTag
-	}
-
 	// Get base image configuration information
     // Pull manifest then blob via client so one token is fetched and reused
-    manifestData, contentType, err := baseClient.GetManifest(ctx, params.BaseImageName, baseImageTag)
+    manifestData, contentType, err := baseClient.GetManifest(ctx, baseRepository, baseTag)
     if err != nil {
         logger.Error().Err(err).Msg("Failed to get base manifest via client")
         return err
@@ -145,7 +139,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
     if configDigest == "" {
         return fmt.Errorf("config digest not found in manifest")
     }
-    baseConfig, err := baseClient.GetBlob(ctx, params.BaseImageName, configDigest)
+    baseConfig, err := baseClient.GetBlob(ctx, baseRepository, configDigest)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to get config")
 		return err
@@ -173,7 +167,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	}
 	uploadConfigDigest := "sha256:" + uploadConfigSHA256
 	
-    err = registry.UploadConfigWithClient(targetClient, updatedConfig, uploadConfigDigest, params.TargetImage)
+    err = registry.UploadConfigWithClient(targetClient, updatedConfig, uploadConfigDigest, targetRepository)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to upload updated config")
 		return err
@@ -223,19 +217,58 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
     logger.Info().Str("phase", "build").Int("step", 7).Int("updatedManifestSize", len(updatedManifest)).Msg("Updated manifest, pointing to new config and layer")
     logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
-	// Determine target image tag
-	targetImageTag := "latest"
-	if params.TargetImageTag != "" {
-		targetImageTag = params.TargetImageTag
-	}
-
 	// Upload the updated manifest to the target registry using existing client
-    err = targetClient.UploadManifest(ctx, params.TargetImage, targetImageTag, updatedManifest, contentType)
+    err = targetClient.UploadManifest(ctx, targetRepository, targetTag, updatedManifest, contentType)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to upload updated manifest")
 		return err
 	}
 
-    logger.Info().Str("phase", "build").Int("step", 8).Str("repository", params.TargetImage).Str("reference", targetImageTag).Msg("Uploaded updated manifest to target registry")
+    logger.Info().Str("phase", "build").Int("step", 8).Str("repository", targetRepository).Str("reference", targetTag).Msg("Uploaded updated manifest to target registry")
 	return nil
+}
+
+// splitRepositoryAndTag splits an image reference into repository and tag.
+// If no tag is present, tag defaults to "latest".
+// It is careful to not confuse registry port (e.g., my-registry:5000) with tag by
+// only considering the last ':' after the last '/'.
+func splitRepositoryAndTag(reference string) (repository string, tag string) {
+    if reference == "" {
+        return "", "latest"
+    }
+    // Strip any digest part if provided (repo@sha256:...)
+    // For this project we do not support digest references for upload targets,
+    // but handle gracefully by removing the digest part.
+    atIndex := -1
+    for i := 0; i < len(reference); i++ {
+        if reference[i] == '@' {
+            atIndex = i
+            break
+        }
+    }
+    ref := reference
+    if atIndex != -1 {
+        ref = reference[:atIndex]
+    }
+
+    // Find last '/' and then check for ':' after that
+    lastSlash := -1
+    for i := len(ref) - 1; i >= 0; i-- {
+        if ref[i] == '/' {
+            lastSlash = i
+            break
+        }
+    }
+    lastColon := -1
+    for i := len(ref) - 1; i >= 0; i-- {
+        if ref[i] == ':' {
+            lastColon = i
+            break
+        }
+    }
+
+    if lastColon != -1 && lastColon > lastSlash {
+        return ref[:lastColon], ref[lastColon+1:]
+    }
+    return ref, "latest"
 }

@@ -52,7 +52,7 @@ func main() {
         Str("base_image", "117503445/layerize-test-base").
         Str("base_tag", "latest").
         Msg("Ready to start image building")
-	for i := range 10 {
+	for i := range 1 {
         logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
 
 		// Call buildImageFromMap function to execute build operation

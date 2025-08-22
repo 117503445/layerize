@@ -98,11 +98,14 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
         Int64("diff_tar_gz_len", params.DiffTarLen).
         Msg("Start image building process")
 
-	// Create centralized registry clients for token reuse
-	registryURL := "https://registry.cn-hangzhou.aliyuncs.com"
-	targetClient := registry.NewClient(registryURL, params.TargetAuth.Username, params.TargetAuth.Password)
-	// baseClient for future use if needed for base image operations with different credentials
-	_ = registry.NewClient(registryURL, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+    // Create centralized registry clients for token reuse
+    registryURL := "https://registry.cn-hangzhou.aliyuncs.com"
+    targetClient := registry.NewClient(registryURL, params.TargetAuth.Username, params.TargetAuth.Password)
+    // If base and target credentials are the same, reuse the same client to share token
+    baseClient := targetClient
+    if params.BaseImageAuth.Username != params.TargetAuth.Username || params.BaseImageAuth.Password != params.TargetAuth.Password {
+        baseClient = registry.NewClient(registryURL, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+    }
 
     // Use provided digests and size without decompressing or temp files
     fileSize := params.DiffTarLen
@@ -127,7 +130,22 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	}
 
 	// Get base image configuration information
-    baseConfig, err := registry.GetConfigWithAuth(ctx, registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+    // Pull manifest then blob via client so one token is fetched and reused
+    manifestData, contentType, err := baseClient.GetManifest(ctx, params.BaseImageName, baseImageTag)
+    if err != nil {
+        logger.Error().Err(err).Msg("Failed to get base manifest via client")
+        return err
+    }
+    var manifestObj map[string]any
+    if err := json.Unmarshal(manifestData, &manifestObj); err != nil {
+        logger.Error().Err(err).Msg("Failed to parse base manifest")
+        return err
+    }
+    configDigest, _ := manifestObj["config"].(map[string]any)["digest"].(string)
+    if configDigest == "" {
+        return fmt.Errorf("config digest not found in manifest")
+    }
+    baseConfig, err := baseClient.GetBlob(ctx, params.BaseImageName, configDigest)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to get config")
 		return err
@@ -163,19 +181,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 
     logger.Info().Str("phase", "build").Int("step", 5).Str("config_digest", uploadConfigDigest).Msg("Uploaded updated config")
 
-	// Determine base image tag
-	baseImageTag = "latest"
-	if params.BaseImageTag != "" {
-		baseImageTag = params.BaseImageTag
-	}
-
-	// Get base image manifest example
-    manifestData, contentType, err := registry.GetManifestWithAuth(ctx, registryURL, params.BaseImageName, baseImageTag, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
-	if err != nil {
-		logger.Error().Err(err).Msg("Failed to get manifest")
-		return err
-	}
-
+    // We already have base manifest and contentType from earlier call using baseClient
     logger.Info().Str("phase", "build").Int("step", 6).Str("contentType", contentType).Int("manifestSize", len(manifestData)).Msg("Obtained base image manifest")
     logger.Debug().RawJSON("manifest", manifestData).Msg("Base image manifest content")
 
@@ -185,7 +191,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		logger.Error().Err(err).Msg("Failed to calculate config SHA256")
 		return err
 	}
-	configDigest := "sha256:" + configSHA256
+    configDigest = "sha256:" + configSHA256
 
 	// Update config reference in manifest
 	var manifestDataObj map[string]any

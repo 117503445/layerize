@@ -321,3 +321,111 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 
 	return nil
 }
+
+// GetManifest retrieves an image manifest using the centralized client and token cache
+// Parameters:
+// - ctx: context for the operation
+// - repository: repository to fetch from
+// - reference: tag or digest reference
+// Returns manifest bytes, content type, and error if any
+func (c *Client) GetManifest(ctx context.Context, repository, reference string) ([]byte, string, error) {
+    endpoint := fmt.Sprintf("/v2/%s/manifests/%s", repository, reference)
+    scope := fmt.Sprintf("repository:%s:push,pull", repository)
+
+    req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
+    if err != nil {
+        return nil, "", fmt.Errorf("failed to create manifest request: %w", err)
+    }
+
+    // Accept both Docker and OCI manifest formats
+    req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json")
+
+    authHeader, err := c.getAuthorizationHeader(ctx, scope)
+    if err != nil {
+        return nil, "", fmt.Errorf("failed to get auth header: %w", err)
+    }
+    req.Header.Set("Authorization", authHeader)
+
+    retryConfig := DefaultRetryConfig()
+    resp, err := WithRetry(ctx, "manifest-get", retryConfig, func() (*http.Response, error) {
+        // Refresh auth header for each attempt
+        authHeader, err := c.getAuthorizationHeader(ctx, scope)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get auth header: %w", err)
+        }
+        req.Header.Set("Authorization", authHeader)
+        return c.httpClient.Do(req)
+    })
+    if err != nil {
+        return nil, "", fmt.Errorf("failed to get manifest after retries: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        // If we get 401, invalidate the token
+        if resp.StatusCode == http.StatusUnauthorized {
+            c.InvalidateToken(ctx, scope)
+        }
+        return nil, "", fmt.Errorf("failed to get manifest, status code: %d, response: %s", resp.StatusCode, string(body))
+    }
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, "", fmt.Errorf("failed to read manifest body: %w", err)
+    }
+    contentType := resp.Header.Get("Content-Type")
+    return body, contentType, nil
+}
+
+// GetBlob retrieves a blob (e.g., config) using the centralized client and token cache
+// Parameters:
+// - ctx: context for the operation
+// - repository: repository name
+// - digest: blob digest like sha256:...
+// Returns blob bytes and error if any
+func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte, error) {
+    endpoint := fmt.Sprintf("/v2/%s/blobs/%s", repository, digest)
+    scope := fmt.Sprintf("repository:%s:push,pull", repository)
+
+    req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create blob request: %w", err)
+    }
+
+    authHeader, err := c.getAuthorizationHeader(ctx, scope)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get auth header: %w", err)
+    }
+    req.Header.Set("Authorization", authHeader)
+
+    retryConfig := DefaultRetryConfig()
+    resp, err := WithRetry(ctx, "blob-get", retryConfig, func() (*http.Response, error) {
+        // Refresh auth header for each attempt
+        authHeader, err := c.getAuthorizationHeader(ctx, scope)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get auth header: %w", err)
+        }
+        req.Header.Set("Authorization", authHeader)
+        return c.httpClient.Do(req)
+    })
+    if err != nil {
+        return nil, fmt.Errorf("failed to get blob after retries: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        // If we get 401, invalidate token
+        if resp.StatusCode == http.StatusUnauthorized {
+            c.InvalidateToken(ctx, scope)
+        }
+        return nil, fmt.Errorf("failed to get blob, status code: %d, response: %s", resp.StatusCode, string(body))
+    }
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read blob body: %w", err)
+    }
+    return body, nil
+}

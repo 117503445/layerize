@@ -47,8 +47,8 @@ func main() {
     logger.Info().
         Str("phase", "build").
         Int("step", 0).
-        Str("target_image", "117503445/layerize-test-base:08182357").
-        Str("base_image", "117503445/layerize-test-base:latest").
+        Str("target_image", "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357").
+        Str("base_image", "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:latest").
         Msg("Ready to start image building")
 	for i := range 1 {
         logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
@@ -57,9 +57,9 @@ func main() {
         err = builder.BuildImageFromMap(
             ctx,
             files,
-            "117503445/layerize-test-base:08182357", // target image (with tag)
+            "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357", // target image (with tag)
             auth,                                      // target auth
-            "117503445/layerize-test-base:latest",    // base image (with tag)
+            "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:latest",    // base image (with tag)
             auth,                                      // base image auth
         )
 		if err != nil {

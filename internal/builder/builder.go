@@ -6,6 +6,7 @@ import (
     "context"
     "encoding/json"
     "fmt"
+    "strings"
 
     "github.com/117503445/goutils"
     "github.com/117503445/layerize/internal/manifest"
@@ -84,9 +85,9 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	logger := log.Ctx(ctx)
 	goutils.InitZeroLog()
 
-    // Parse image references
-    baseRepository, baseTag := splitRepositoryAndTag(params.BaseImage)
-    targetRepository, targetTag := splitRepositoryAndTag(params.TargetImage)
+    // Parse image references, extracting registry URL, repository, and tag
+    baseRegistryURL, baseRepository, baseTag := parseImageReference(params.BaseImage)
+    targetRegistryURL, targetRepository, targetTag := parseImageReference(params.TargetImage)
 
     logger.Info().
         Str("phase", "build").
@@ -98,13 +99,19 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
         Int64("diff_tar_gz_len", params.DiffTarLen).
         Msg("Start image building process")
 
-    // Create centralized registry clients for token reuse
-    registryURL := "https://registry.cn-hangzhou.aliyuncs.com"
-    targetClient := registry.NewClient(registryURL, params.TargetAuth.Username, params.TargetAuth.Password)
-    // If base and target credentials are the same, reuse the same client to share token
+    // Create centralized registry clients for token reuse, per registry
+    logger.Info().
+        Str("target_registry", targetRegistryURL).
+        Str("base_registry", baseRegistryURL).
+        Msg("Resolved registries from image references")
+
+    targetClient := registry.NewClient(targetRegistryURL, params.TargetAuth.Username, params.TargetAuth.Password)
+    // Reuse client only if registry and credentials are identical
     baseClient := targetClient
-    if params.BaseImageAuth.Username != params.TargetAuth.Username || params.BaseImageAuth.Password != params.TargetAuth.Password {
-        baseClient = registry.NewClient(registryURL, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
+    if baseRegistryURL != targetRegistryURL ||
+        params.BaseImageAuth.Username != params.TargetAuth.Username ||
+        params.BaseImageAuth.Password != params.TargetAuth.Password {
+        baseClient = registry.NewClient(baseRegistryURL, params.BaseImageAuth.Username, params.BaseImageAuth.Password)
     }
 
     // Use provided digests and size without decompressing or temp files
@@ -271,4 +278,73 @@ func splitRepositoryAndTag(reference string) (repository string, tag string) {
         return ref[:lastColon], ref[lastColon+1:]
     }
     return ref, "latest"
+}
+
+// parseImageReference splits an image reference into registry URL, repository (without registry), and tag.
+// Supported formats:
+// - "registry.example.com/namespace/repo:tag"
+// - "localhost:5000/namespace/repo:tag"
+// - "namespace/repo:tag" (no explicit registry; falls back to defaultRegistryURL)
+// The returned registryURL always has an https:// scheme and no trailing slash.
+func parseImageReference(reference string) (registryURL string, repository string, tag string) {
+    if reference == "" {
+        return defaultRegistryURL(), "", "latest"
+    }
+
+    // Strip any digest part if provided (repo@sha256:...)
+    ref := reference
+    if idx := strings.IndexByte(ref, '@'); idx != -1 {
+        ref = ref[:idx]
+    }
+
+    // Determine tag by finding the last ':' that appears after the last '/'
+    lastSlash := strings.LastIndexByte(ref, '/')
+    lastColon := strings.LastIndexByte(ref, ':')
+    if lastColon != -1 && lastColon > lastSlash {
+        repository = ref[:lastColon]
+        tag = ref[lastColon+1:]
+    } else {
+        repository = ref
+        tag = "latest"
+    }
+
+    // Detect registry host (first path component) if it looks like a registry
+    firstSlash := strings.IndexByte(repository, '/')
+    var registryHost string
+    if firstSlash != -1 {
+        first := repository[:firstSlash]
+        if looksLikeRegistryHost(first) {
+            registryHost = first
+            repository = repository[firstSlash+1:]
+        }
+    } else {
+        // Single component like "repo" or "repo:tag" with no namespace
+        // No explicit registry
+    }
+
+    if registryHost == "" {
+        registryURL = defaultRegistryURL()
+    } else if strings.HasPrefix(registryHost, "http://") || strings.HasPrefix(registryHost, "https://") {
+        registryURL = strings.TrimRight(registryHost, "/")
+    } else {
+        registryURL = "https://" + registryHost
+    }
+
+    // Normalize repository (remove any accidental leading '/')
+    repository = strings.TrimLeft(repository, "/")
+    return registryURL, repository, tag
+}
+
+// looksLikeRegistryHost returns true if s resembles a registry host (has '.' or ':' or is localhost)
+func looksLikeRegistryHost(s string) bool {
+    if s == "localhost" || strings.HasPrefix(s, "localhost:") {
+        return true
+    }
+    return strings.Contains(s, ".") || strings.Contains(s, ":")
+}
+
+// defaultRegistryURL returns the fallback registry URL when the image reference has no explicit registry
+func defaultRegistryURL() string {
+    // Default to Docker Hub registry
+    return "https://registry-1.docker.io"
 }

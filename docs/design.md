@@ -187,7 +187,7 @@ if err := gzWriter.Close(); err != nil {
 
 ### 4. 调用 BuildImage
 
-将压缩后的数据与必要元信息包装为参数并调用 [BuildImage](file:///workspace/internal/builder/builder.go) 函数：
+将压缩后的数据与必要元信息包装为参数并调用 [BuildImage](file:///workspace/pkg/builder/builder.go) 函数：
 
 ```go
 params := types.BuildImageParams{
@@ -206,7 +206,7 @@ return BuildImage(ctx, params)
 
 ### 5. BuildImage 执行流程
 
-[BuildImage](file:///workspace/internal/builder/builder.go) 函数执行完整的镜像构建过程，包含以下关键步骤和日志：
+[BuildImage](file:///workspace/pkg/builder/builder.go) 函数执行完整的镜像构建过程，包含以下关键步骤和日志：
 
 #### 步骤 0: 初始化和记录开始信息
 

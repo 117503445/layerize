@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/117503445/layerize/internal/registry"
+	"github.com/117503445/layerize/pkg/registry"
 	"github.com/rs/zerolog/log"
 )
 

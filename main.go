@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/117503445/goutils"
-	"github.com/117503445/layerize/internal/builder"
-	"github.com/117503445/layerize/internal/types"
-	"github.com/117503445/layerize/internal/validator"
+	"github.com/117503445/layerize/pkg/builder"
+	"github.com/117503445/layerize/pkg/types"
+	"github.com/117503445/layerize/pkg/validator"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 )

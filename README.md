@@ -58,7 +58,7 @@ docker-compose up dev
 .
 ├── assets           # 资源文件
 ├── cmd              # 命令行程序入口
-├── internal         # 核心代码
+├── pkg         # 核心代码
 │   ├── builder      # 镜像构建逻辑
 │   ├── config       # 配置处理
 │   ├── manifest     # 清单处理

@@ -9,10 +9,10 @@ import (
     "strings"
 
     "github.com/117503445/goutils"
-    "github.com/117503445/layerize/internal/manifest"
-    "github.com/117503445/layerize/internal/registry"
-    "github.com/117503445/layerize/internal/types"
-    "github.com/117503445/layerize/internal/utils"
+    "github.com/117503445/layerize/pkg/manifest"
+    "github.com/117503445/layerize/pkg/registry"
+    "github.com/117503445/layerize/pkg/types"
+    "github.com/117503445/layerize/pkg/utils"
     "github.com/rs/zerolog/log"
 )
 

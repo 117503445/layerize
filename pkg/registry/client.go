@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -38,7 +38,7 @@ type Client struct {
 // - bool: true if token is expired, false otherwise
 func (t *Token) IsExpired(ctx context.Context) bool {
 	logger := log.Ctx(ctx)
-	
+
 	// Handle tokens with expires_in=0 - treat them as long-lived (1 hour default)
 	expiresIn := t.ExpiresIn
 	if expiresIn <= 0 {
@@ -48,21 +48,21 @@ func (t *Token) IsExpired(ctx context.Context) bool {
 			Int("effective_expires_in", expiresIn).
 			Msg("Token has no explicit expiry, using default duration")
 	}
-	
+
 	// Add 60 second buffer before actual expiry to avoid race conditions
 	bufferTime := 60 * time.Second
 	expiryTime := t.IssuedAt.Add(time.Duration(expiresIn)*time.Second - bufferTime)
 	isExpired := time.Now().After(expiryTime)
-	
-    logger.Debug().
+
+	logger.Debug().
 		Time("issued_at", t.IssuedAt).
 		Int("original_expires_in", t.ExpiresIn).
 		Int("effective_expires_in", expiresIn).
 		Time("expiry_time", expiryTime).
 		Bool("is_expired", isExpired).
-        Str("phase", "auth").
-        Msg("Token expiry check")
-	
+		Str("phase", "auth").
+		Msg("Token expiry check")
+
 	return isExpired
 }
 
@@ -78,10 +78,10 @@ func NewClient(registryURL, username, password string) *Client {
 		registryURL: registryURL,
 		username:    username,
 		password:    password,
-		httpClient:  &http.Client{
+		httpClient: &http.Client{
 			Timeout: 60 * time.Second, // Add timeout to prevent hanging requests
 		},
-		tokenCache:  make(map[string]*Token),
+		tokenCache: make(map[string]*Token),
 	}
 }
 
@@ -94,39 +94,39 @@ func NewClient(registryURL, username, password string) *Client {
 // - error: any error that occurred while getting the authorization header
 func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (string, error) {
 	logger := log.Ctx(ctx)
-	
+
 	c.tokenMutex.RLock()
 	token, exists := c.tokenCache[scope]
 	c.tokenMutex.RUnlock()
 
-    logger.Debug().
+	logger.Debug().
 		Str("scope", scope).
 		Bool("token_exists", exists).
-        Str("phase", "auth").
-        Msg("Checking token cache")
+		Str("phase", "auth").
+		Msg("Checking token cache")
 
 	if !exists || token.IsExpired(ctx) {
-        logger.Info().
+		logger.Info().
 			Str("scope", scope).
 			Bool("existed", exists).
 			Bool("expired", exists && token.IsExpired(ctx)).
-            Str("phase", "auth").
-            Msg("Fetching new token")
-		
+			Str("phase", "auth").
+			Msg("Fetching new token")
+
 		var err error
 		token, err = c.fetchToken(ctx, scope)
 		if err != nil {
-            logger.Error().Err(err).Str("scope", scope).Str("phase", "auth").Msg("Failed to fetch token")
+			logger.Error().Err(err).Str("scope", scope).Str("phase", "auth").Msg("Failed to fetch token")
 			return "", err
 		}
 
 		c.tokenMutex.Lock()
 		c.tokenCache[scope] = token
 		c.tokenMutex.Unlock()
-		
-        logger.Info().Str("scope", scope).Str("phase", "auth").Msg("Token cached successfully")
+
+		logger.Info().Str("scope", scope).Str("phase", "auth").Msg("Token cached successfully")
 	} else {
-        logger.Debug().Str("scope", scope).Str("phase", "auth").Msg("Using cached token")
+		logger.Debug().Str("scope", scope).Str("phase", "auth").Msg("Using cached token")
 	}
 
 	return "Bearer " + token.AccessToken, nil
@@ -138,12 +138,12 @@ func (c *Client) getAuthorizationHeader(ctx context.Context, scope string) (stri
 // - scope: scope of the token to invalidate
 func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 	logger := log.Ctx(ctx)
-	
+
 	c.tokenMutex.Lock()
 	defer c.tokenMutex.Unlock()
-	
-    if _, exists := c.tokenCache[scope]; exists {
-        logger.Info().Str("scope", scope).Str("phase", "auth").Msg("Invalidating cached token due to authentication failure")
+
+	if _, exists := c.tokenCache[scope]; exists {
+		logger.Info().Str("scope", scope).Str("phase", "auth").Msg("Invalidating cached token due to authentication failure")
 		delete(c.tokenCache, scope)
 	}
 }
@@ -157,62 +157,65 @@ func (c *Client) InvalidateToken(ctx context.Context, scope string) {
 // - error: any error that occurred while fetching the token
 func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 	logger := log.Ctx(ctx)
-	
-    logger.Debug().Str("scope", scope).Str("phase", "auth").Int("step", 0).Msg("Starting token fetch")
-	
+
+	logger.Debug().Str("scope", scope).Str("phase", "auth").Int("step", 0).Msg("Starting token fetch")
+
 	authURL, err := c.getAuthURL(ctx, scope)
 	if err != nil {
-        logger.Error().Err(err).Str("phase", "auth").Int("step", 0).Msg("Failed to get auth URL")
+		logger.Error().Err(err).Str("phase", "auth").Int("step", 0).Msg("Failed to get auth URL")
 		return nil, err
 	}
 
-    logger.Debug().Str("auth_url", authURL).Str("phase", "auth").Int("step", 1).Msg("Requesting token from auth server")
-	
-    req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
+	logger.Debug().Str("auth_url", authURL).
+		Str("username", c.username).
+		Str("password", c.password).
+		Str("phase", "auth").Int("step", 1).Msg("Requesting token from auth server")
+
+	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth request: %w", err)
 	}
 
-    // Only set Basic auth when both username and password are provided
-    if c.username != "" && c.password != "" {
-        req.SetBasicAuth(c.username, c.password)
-    }
+	// Only set Basic auth when both username and password are provided
+	if c.username != "" && c.password != "" {
+		req.SetBasicAuth(c.username, c.password)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-        logger.Error().Err(err).Str("auth_url", authURL).Str("phase", "auth").Int("step", 1).Msg("HTTP request to auth server failed")
+		logger.Error().Err(err).Str("auth_url", authURL).Str("phase", "auth").Int("step", 1).Msg("HTTP request to auth server failed")
 		return nil, fmt.Errorf("auth request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-        logger.Error().
+		logger.Error().
 			Int("status_code", resp.StatusCode).
 			Str("response_body", string(body)).
 			Str("auth_url", authURL).
-            Str("phase", "auth").
-            Int("step", 1).
-            Msg("Authentication failed")
+			Str("phase", "auth").
+			Int("step", 1).
+			Msg("Authentication failed")
 		return nil, fmt.Errorf("authentication failed: %s, response: %s", resp.Status, string(body))
 	}
 
 	var token Token
 	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
-        logger.Error().Err(err).Str("phase", "auth").Int("step", 2).Msg("Failed to decode token response")
+		logger.Error().Err(err).Str("phase", "auth").Int("step", 2).Msg("Failed to decode token response")
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	token.IssuedAt = time.Now()
-	
-    logger.Info().
+
+	logger.Info().
 		Str("scope", scope).
 		Time("issued_at", token.IssuedAt).
 		Int("expires_in", token.ExpiresIn).
-        Str("phase", "auth").
-        Int("step", 3).
-        Msg("Token fetched successfully")
-	
+		Str("phase", "auth").
+		Int("step", 3).
+		Msg("Token fetched successfully")
+
 	return &token, nil
 }
 
@@ -332,54 +335,54 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 // - reference: tag or digest reference
 // Returns manifest bytes, content type, and error if any
 func (c *Client) GetManifest(ctx context.Context, repository, reference string) ([]byte, string, error) {
-    endpoint := fmt.Sprintf("/v2/%s/manifests/%s", repository, reference)
-    // Read-only operation should request pull scope only
-    scope := fmt.Sprintf("repository:%s:pull", repository)
+	endpoint := fmt.Sprintf("/v2/%s/manifests/%s", repository, reference)
+	// Read-only operation should request pull scope only
+	scope := fmt.Sprintf("repository:%s:pull", repository)
 
-    req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
-    if err != nil {
-        return nil, "", fmt.Errorf("failed to create manifest request: %w", err)
-    }
+	req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create manifest request: %w", err)
+	}
 
-    // Accept both Docker and OCI manifest formats
-    req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json")
+	// Accept both Docker and OCI manifest formats
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json")
 
-    authHeader, err := c.getAuthorizationHeader(ctx, scope)
-    if err != nil {
-        return nil, "", fmt.Errorf("failed to get auth header: %w", err)
-    }
-    req.Header.Set("Authorization", authHeader)
+	authHeader, err := c.getAuthorizationHeader(ctx, scope)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get auth header: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
 
-    retryConfig := DefaultRetryConfig()
-    resp, err := WithRetry(ctx, "manifest-get", retryConfig, func() (*http.Response, error) {
-        // Refresh auth header for each attempt
-        authHeader, err := c.getAuthorizationHeader(ctx, scope)
-        if err != nil {
-            return nil, fmt.Errorf("failed to get auth header: %w", err)
-        }
-        req.Header.Set("Authorization", authHeader)
-        return c.httpClient.Do(req)
-    })
-    if err != nil {
-        return nil, "", fmt.Errorf("failed to get manifest after retries: %w", err)
-    }
-    defer resp.Body.Close()
+	retryConfig := DefaultRetryConfig()
+	resp, err := WithRetry(ctx, "manifest-get", retryConfig, func() (*http.Response, error) {
+		// Refresh auth header for each attempt
+		authHeader, err := c.getAuthorizationHeader(ctx, scope)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get auth header: %w", err)
+		}
+		req.Header.Set("Authorization", authHeader)
+		return c.httpClient.Do(req)
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get manifest after retries: %w", err)
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        body, _ := io.ReadAll(resp.Body)
-        // If we get 401, invalidate the token
-        if resp.StatusCode == http.StatusUnauthorized {
-            c.InvalidateToken(ctx, scope)
-        }
-        return nil, "", fmt.Errorf("failed to get manifest, status code: %d, response: %s", resp.StatusCode, string(body))
-    }
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		// If we get 401, invalidate the token
+		if resp.StatusCode == http.StatusUnauthorized {
+			c.InvalidateToken(ctx, scope)
+		}
+		return nil, "", fmt.Errorf("failed to get manifest, status code: %d, response: %s", resp.StatusCode, string(body))
+	}
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, "", fmt.Errorf("failed to read manifest body: %w", err)
-    }
-    contentType := resp.Header.Get("Content-Type")
-    return body, contentType, nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read manifest body: %w", err)
+	}
+	contentType := resp.Header.Get("Content-Type")
+	return body, contentType, nil
 }
 
 // GetBlob retrieves a blob (e.g., config) using the centralized client and token cache
@@ -389,48 +392,48 @@ func (c *Client) GetManifest(ctx context.Context, repository, reference string) 
 // - digest: blob digest like sha256:...
 // Returns blob bytes and error if any
 func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte, error) {
-    endpoint := fmt.Sprintf("/v2/%s/blobs/%s", repository, digest)
-    // Read-only operation should request pull scope only
-    scope := fmt.Sprintf("repository:%s:pull", repository)
+	endpoint := fmt.Sprintf("/v2/%s/blobs/%s", repository, digest)
+	// Read-only operation should request pull scope only
+	scope := fmt.Sprintf("repository:%s:pull", repository)
 
-    req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create blob request: %w", err)
-    }
+	req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create blob request: %w", err)
+	}
 
-    authHeader, err := c.getAuthorizationHeader(ctx, scope)
-    if err != nil {
-        return nil, fmt.Errorf("failed to get auth header: %w", err)
-    }
-    req.Header.Set("Authorization", authHeader)
+	authHeader, err := c.getAuthorizationHeader(ctx, scope)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auth header: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
 
-    retryConfig := DefaultRetryConfig()
-    resp, err := WithRetry(ctx, "blob-get", retryConfig, func() (*http.Response, error) {
-        // Refresh auth header for each attempt
-        authHeader, err := c.getAuthorizationHeader(ctx, scope)
-        if err != nil {
-            return nil, fmt.Errorf("failed to get auth header: %w", err)
-        }
-        req.Header.Set("Authorization", authHeader)
-        return c.httpClient.Do(req)
-    })
-    if err != nil {
-        return nil, fmt.Errorf("failed to get blob after retries: %w", err)
-    }
-    defer resp.Body.Close()
+	retryConfig := DefaultRetryConfig()
+	resp, err := WithRetry(ctx, "blob-get", retryConfig, func() (*http.Response, error) {
+		// Refresh auth header for each attempt
+		authHeader, err := c.getAuthorizationHeader(ctx, scope)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get auth header: %w", err)
+		}
+		req.Header.Set("Authorization", authHeader)
+		return c.httpClient.Do(req)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blob after retries: %w", err)
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        body, _ := io.ReadAll(resp.Body)
-        // If we get 401, invalidate token
-        if resp.StatusCode == http.StatusUnauthorized {
-            c.InvalidateToken(ctx, scope)
-        }
-        return nil, fmt.Errorf("failed to get blob, status code: %d, response: %s", resp.StatusCode, string(body))
-    }
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		// If we get 401, invalidate token
+		if resp.StatusCode == http.StatusUnauthorized {
+			c.InvalidateToken(ctx, scope)
+		}
+		return nil, fmt.Errorf("failed to get blob, status code: %d, response: %s", resp.StatusCode, string(body))
+	}
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read blob body: %w", err)
-    }
-    return body, nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read blob body: %w", err)
+	}
+	return body, nil
 }

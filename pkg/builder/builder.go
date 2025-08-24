@@ -119,7 +119,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
     logger.Info().Str("phase", "build").Int("step", 1).Int64("compressed_size", fileSize).Msg("Using provided compressed layer size")
 
     // Upload layer to target image registry using centralized client (streaming reader)
-    err := registry.UploadLayerWithClient(targetClient, params.DiffTarGzReader, params.DiffTarGzSHA256, targetRepository)
+    err := registry.UploadLayerWithClient(ctx, targetClient, params.DiffTarGzReader, params.DiffTarGzSHA256, targetRepository)
 	if err != nil {
 		logger.Error().Err(err).Msg("UploadLayerWithClient failed")
 		return err
@@ -174,7 +174,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	}
 	uploadConfigDigest := "sha256:" + uploadConfigSHA256
 	
-    err = registry.UploadConfigWithClient(targetClient, updatedConfig, uploadConfigDigest, targetRepository)
+    err = registry.UploadConfigWithClient(ctx, targetClient, updatedConfig, uploadConfigDigest, targetRepository)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to upload updated config")
 		return err

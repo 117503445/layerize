@@ -14,14 +14,14 @@ import (
 
 // UploadConfigWithClient uploads config using the centralized client with token management
 // Parameters:
+// - ctx: context for the operation
 // - client: registry client to use for upload
 // - configData: config data to upload
 // - configDigest: digest of the config data
 // - repository: repository name
 // Returns:
 // - error: any error that occurred during config upload
-func UploadConfigWithClient(client *Client, configData []byte, configDigest, repository string) error {
-	ctx := context.Background()
+func UploadConfigWithClient(ctx context.Context, client *Client, configData []byte, configDigest, repository string) error {
 	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 	

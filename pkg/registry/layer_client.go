@@ -11,8 +11,7 @@ import (
 )
 
 // UploadLayerWithClient uploads layer using the centralized client with token management
-func UploadLayerWithClient(client *Client, reader io.Reader, sha256sum, repository string) error {
-	ctx := context.Background()
+func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader, sha256sum, repository string) error {
 	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 	

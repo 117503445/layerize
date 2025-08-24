@@ -152,5 +152,5 @@ func UploadConfigToRegistryWithAuth(ctx context.Context, configData []byte, conf
 		configDigest = calculatedDigest
 	}
 
-	return UploadConfigWithClient(client, configData, configDigest, repository)
+	return UploadConfigWithClient(ctx, client, configData, configDigest, repository)
 }

@@ -168,12 +168,15 @@ func (c *Client) fetchToken(ctx context.Context, scope string) (*Token, error) {
 
     logger.Debug().Str("auth_url", authURL).Str("phase", "auth").Int("step", 1).Msg("Requesting token from auth server")
 	
-	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
+    req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth request: %w", err)
 	}
 
-	req.SetBasicAuth(c.username, c.password)
+    // Only set Basic auth when both username and password are provided
+    if c.username != "" && c.password != "" {
+        req.SetBasicAuth(c.username, c.password)
+    }
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -330,7 +333,8 @@ func (c *Client) UploadManifest(ctx context.Context, repository, reference strin
 // Returns manifest bytes, content type, and error if any
 func (c *Client) GetManifest(ctx context.Context, repository, reference string) ([]byte, string, error) {
     endpoint := fmt.Sprintf("/v2/%s/manifests/%s", repository, reference)
-    scope := fmt.Sprintf("repository:%s:push,pull", repository)
+    // Read-only operation should request pull scope only
+    scope := fmt.Sprintf("repository:%s:pull", repository)
 
     req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
     if err != nil {
@@ -386,7 +390,8 @@ func (c *Client) GetManifest(ctx context.Context, repository, reference string) 
 // Returns blob bytes and error if any
 func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte, error) {
     endpoint := fmt.Sprintf("/v2/%s/blobs/%s", repository, digest)
-    scope := fmt.Sprintf("repository:%s:push,pull", repository)
+    // Read-only operation should request pull scope only
+    scope := fmt.Sprintf("repository:%s:pull", repository)
 
     req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
     if err != nil {

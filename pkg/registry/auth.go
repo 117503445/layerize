@@ -72,7 +72,7 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
         Int("step", 1).
         Msg("Parsed authentication parameters")
 
-	// Build auth URL
+    // Build auth URL
 	authURL := realm
 	params = []string{}
 	if service != "" {
@@ -100,15 +100,17 @@ func getTokenFromWWWAuth(ctx context.Context, wwwAuth, username, password string
 
     logger.Info().Str("authURL", authURL).Str("finalScope", scope).Str("phase", "auth").Int("step", 2).Msg("Requesting authentication token")
 
-	// Request token
+    // Request token
 	req, err := http.NewRequestWithContext(ctx, "GET", authURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create auth request: %w", err)
 	}
 
-	// Add basic authentication
-	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-	req.Header.Set("Authorization", "Basic "+auth)
+    // Add Basic authentication only when both username and password are provided
+    if username != "" && password != "" {
+        auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+        req.Header.Set("Authorization", "Basic "+auth)
+    }
 
 	// Add timeout to prevent hanging requests
 	client := &http.Client{

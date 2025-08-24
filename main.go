@@ -33,10 +33,23 @@ func main() {
 	}
     logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
 
-	// Read authentication information from environment variables
-	username := os.Getenv("username")
-	password := os.Getenv("password")
-	auth := types.Auth{Username: username, Password: password}
+    // Read authentication information from environment variables
+    username := os.Getenv("username")
+    password := os.Getenv("password")
+    auth := types.Auth{Username: username, Password: password}
+
+    // Optional: separate credentials for base and target
+    baseUsername := os.Getenv("base_username")
+    basePassword := os.Getenv("base_password")
+    targetUsername := os.Getenv("target_username")
+    targetPassword := os.Getenv("target_password")
+    if targetUsername != "" || targetPassword != "" {
+        auth = types.Auth{Username: targetUsername, Password: targetPassword}
+    }
+    baseAuth := types.Auth{Username: baseUsername, Password: basePassword}
+    if baseUsername == "" && basePassword == "" {
+        baseAuth = auth
+    }
 	content := goutils.TimeStrMilliSec()
 
     // Create file mapping to simulate content in tmp/diff.tar
@@ -57,10 +70,10 @@ func main() {
         err = builder.BuildImageFromMap(
             ctx,
             files,
-            "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357", // target image (with tag)
+            "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512", // target image (with tag)
             auth,                                      // target auth
-            "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:latest",    // base image (with tag)
-            auth,                                      // base image auth
+            "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13",    // base image (with tag)
+            baseAuth,                                  // base image auth
         )
 		if err != nil {
 			logger.Error().Err(err).Msg("buildImageFromMap execution failed")

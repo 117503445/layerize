@@ -1,15 +1,17 @@
 package validator
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
+    "bytes"
+    "context"
+    "encoding/json"
+    "fmt"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "strings"
 
-	"github.com/117503445/goutils"
-	"github.com/rs/zerolog/log"
+    "github.com/117503445/goutils"
+    "github.com/rs/zerolog/log"
 )
 
 // ValidateBuiltImage validates if the built image is correct by pulling the image and verifying its content
@@ -38,9 +40,9 @@ func ValidateBuiltImage(ctx context.Context, targetImage string, content string)
 	}
 	defer os.RemoveAll(dirTempRootFs)
 
-	// Login to registry
-	username := os.Getenv("username")
-	password := os.Getenv("password")
+    // Login to registry (prefer target_username/target_password for clarity)
+    username := firstNonEmpty(os.Getenv("target_username"), os.Getenv("username"))
+    password := firstNonEmpty(os.Getenv("target_password"), os.Getenv("password"))
 	loginCmd := exec.CommandContext(ctx, "skopeo", "login", "--username", username, "--password", password, registryPart)
 	loginOutput, err := loginCmd.CombinedOutput()
 	if err != nil {
@@ -93,5 +95,35 @@ func ValidateBuiltImage(ctx context.Context, targetImage string, content string)
 		logger.Panic().Msg(".wh.old.txt whiteout file should not exist")
 	}
 
-	return nil
+    // Inspect the pushed target image manifest using skopeo --raw
+    inspectCmd := exec.CommandContext(ctx, "skopeo", "inspect", "--raw", "docker://"+targetImage)
+    inspectOutput, err := inspectCmd.CombinedOutput()
+    if err != nil {
+        logger.Error().Err(err).Str("output", string(inspectOutput)).Msg("Failed to inspect target image manifest")
+        return fmt.Errorf("failed to inspect target image: %w", err)
+    }
+
+    // Parse raw manifest to check mediaType and layers
+    var raw map[string]any
+    if err := json.Unmarshal(bytes.TrimSpace(inspectOutput), &raw); err != nil {
+        logger.Error().Err(err).Msg("Failed to parse skopeo inspect --raw output")
+        return fmt.Errorf("failed to parse inspect output: %w", err)
+    }
+    mediaType, _ := raw["mediaType"].(string)
+    if mediaType == "" {
+        logger.Error().Msg("Manifest mediaType is empty in inspected image")
+        return fmt.Errorf("manifest mediaType missing")
+    }
+    logger.Info().Str("mediaType", mediaType).Msg("Inspected target image manifest mediaType")
+    return nil
+}
+
+// firstNonEmpty returns the first non-empty string from inputs
+func firstNonEmpty(values ...string) string {
+    for _, v := range values {
+        if strings.TrimSpace(v) != "" {
+            return v
+        }
+    }
+    return ""
 }

@@ -33,22 +33,27 @@ func main() {
 	}
     logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
 
-    // Read authentication information from environment variables
-    username := os.Getenv("username")
-    password := os.Getenv("password")
-    auth := types.Auth{Username: username, Password: password}
+    // Read common authentication information from environment variables
+    commonUsername := os.Getenv("username")
+    commonPassword := os.Getenv("password")
+    commonAuth := types.Auth{Username: commonUsername, Password: commonPassword}
 
     // Optional: separate credentials for base and target
     baseUsername := os.Getenv("base_username")
     basePassword := os.Getenv("base_password")
     targetUsername := os.Getenv("target_username")
     targetPassword := os.Getenv("target_password")
+
+    // Target auth falls back to common creds
+    targetAuth := commonAuth
     if targetUsername != "" || targetPassword != "" {
-        auth = types.Auth{Username: targetUsername, Password: targetPassword}
+        targetAuth = types.Auth{Username: targetUsername, Password: targetPassword}
     }
-    baseAuth := types.Auth{Username: baseUsername, Password: basePassword}
-    if baseUsername == "" && basePassword == "" {
-        baseAuth = auth
+
+    // Base auth falls back to common creds (never to target creds)
+    baseAuth := commonAuth
+    if baseUsername != "" || basePassword != "" {
+        baseAuth = types.Auth{Username: baseUsername, Password: basePassword}
     }
 	content := goutils.TimeStrMilliSec()
 
@@ -71,7 +76,7 @@ func main() {
             ctx,
             files,
             "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512", // target image (with tag)
-            auth,                                      // target auth
+            targetAuth,                                // target auth
             "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13",    // base image (with tag)
             baseAuth,                                  // base image auth
         )

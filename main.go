@@ -20,10 +20,10 @@ func main() {
 
 	logger := log.Ctx(ctx)
 
-    logger.Info().
-        Str("phase", "init").
-        Int("step", 0).
-        Msg("Starting Layerize sample program")
+	logger.Info().
+		Str("phase", "init").
+		Int("step", 0).
+		Msg("Starting Layerize sample program")
 
 	// Load .env file
 	err := godotenv.Load()
@@ -31,63 +31,51 @@ func main() {
 		logger.Error().Err(err).Msg("Failed to load .env file")
 		panic(err)
 	}
-    logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
+	logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
 
-    // Read common authentication information from environment variables
-    commonUsername := os.Getenv("username")
-    commonPassword := os.Getenv("password")
-    commonAuth := types.Auth{Username: commonUsername, Password: commonPassword}
+	baseImage := "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13"
+	targetImage := "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512"
 
-    // Optional: separate credentials for base and target
-    baseUsername := os.Getenv("base_username")
-    basePassword := os.Getenv("base_password")
-    targetUsername := os.Getenv("target_username")
-    targetPassword := os.Getenv("target_password")
+	// Optional: separate credentials for base and target
+	baseUsername := os.Getenv("base_username")
+	basePassword := os.Getenv("base_password")
+	targetUsername := os.Getenv("target_username")
+	targetPassword := os.Getenv("target_password")
 
-    // Target auth falls back to common creds
-    targetAuth := commonAuth
-    if targetUsername != "" || targetPassword != "" {
-        targetAuth = types.Auth{Username: targetUsername, Password: targetPassword}
-    }
+	targetAuth := types.Auth{Username: targetUsername, Password: targetPassword}
+	baseAuth := types.Auth{Username: baseUsername, Password: basePassword}
 
-    // Base auth falls back to common creds (never to target creds)
-    baseAuth := commonAuth
-    if baseUsername != "" || basePassword != "" {
-        baseAuth = types.Auth{Username: baseUsername, Password: basePassword}
-    }
 	content := goutils.TimeStrMilliSec()
 
-    targetImage := "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512"
-
-    // Create file mapping to simulate content in tmp/diff.tar
+	// Create file mapping to simulate content in tmp/diff.tar
 	files := map[string][]byte{
 		"new.txt":     []byte(content),
 		".wh.old.txt": []byte(""),
 	}
-    logger.Info().
-        Str("phase", "build").
-        Int("step", 0).
-        Str("target_image", targetImage).
-        Str("base_image", "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13").
-        Msg("Ready to start image building")
+	logger.Info().
+		Str("phase", "build").
+		Int("step", 0).
+		Str("target_image", targetImage).
+		Str("base_image", baseImage).
+		Msg("Ready to start image building")
 	for i := range 1 {
-        logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
+		logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
 
-        // Call buildImageFromMap function to execute build operation
-        err = builder.BuildImageFromMap(
-            ctx,
-            files,
-            targetImage, // target image (with tag)
-            targetAuth,                                // target auth
-            "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13",    // base image (with tag)
-            baseAuth,                                  // base image auth
-        )
+		// Call buildImageFromMap function to execute build operation
+		err = builder.BuildImageFromMap(
+			ctx,
+			files,
+			targetImage, // target image (with tag)
+			targetAuth,  // target auth
+			baseImage,   // base image (with tag)
+			baseAuth,    // base image auth
+		)
 		if err != nil {
 			logger.Error().Err(err).Msg("buildImageFromMap execution failed")
 			panic(err)
 		}
 
-        logger.Info().Str("phase", "build").Int("step", 2).Int("test_case", i).Msg("Image building completed")
+		logger.Info().Str("phase", "build").Int("step", 2).Int("test_case", i).Msg("Image building completed")
 
 		// Validate the built image
 		err = validator.ValidateBuiltImage(ctx, targetImage, content)
@@ -96,6 +84,6 @@ func main() {
 			panic(err)
 		}
 
-        logger.Info().Str("phase", "validate").Int("step", 3).Int("test_case", i).Msg("Image validation completed")
+		logger.Info().Str("phase", "validate").Int("step", 3).Int("test_case", i).Msg("Image validation completed")
 	}
 }

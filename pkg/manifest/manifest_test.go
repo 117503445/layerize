@@ -47,7 +47,7 @@ func TestUpdateOCIManifest_DefaultsMediaType(t *testing.T) {
 	var got OCIManifest
 	_ = json.Unmarshal(newB, &got)
 	assert.Len(t, got.Layers, 1)
-	assert.Equal(t, MediaTypeDockerLayer, got.Layers[0].MediaType)
+	assert.Equal(t, MediaTypeOCILayer, got.Layers[0].MediaType)
 }
 
 func TestUpdateManifest_DispatchAndError(t *testing.T) {
@@ -59,7 +59,7 @@ func TestUpdateManifest_DispatchAndError(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, MediaTypeDockerManifest, mt)
 	})
-	
+
 	t.Run("oci", func(t *testing.T) {
 		m := OCIManifest{SchemaVersion: 2, MediaType: MediaTypeOCIManifest}
 		b, _ := json.Marshal(m)
@@ -67,7 +67,7 @@ func TestUpdateManifest_DispatchAndError(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, MediaTypeOCIManifest, mt)
 	})
-	
+
 	t.Run("unsupported", func(t *testing.T) {
 		generic := map[string]any{"mediaType": "application/unknown"}
 		b, _ := json.Marshal(generic)

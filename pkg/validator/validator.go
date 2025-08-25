@@ -87,10 +87,10 @@ func ValidateBuiltImage(ctx context.Context, targetImage string, content string)
 		logger.Panic().Msg("old.txt should not exist")
 	}
 
-	// Check that .wh.old.txt whiteout file exists
+	// Check that .wh.old.txt whiteout file not exists
 	whiteoutFile := filepath.Join(dirTempRootFs, "rootfs", ".wh.old.txt")
-	if !goutils.FileExists(whiteoutFile) {
-		logger.Panic().Msg(".wh.old.txt whiteout file should exist")
+	if goutils.FileExists(whiteoutFile) {
+		logger.Panic().Msg(".wh.old.txt whiteout file should not exist")
 	}
 
 	return nil

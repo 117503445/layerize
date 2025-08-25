@@ -65,7 +65,7 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 		BaseImage:       baseImage,
 		BaseImageAuth:   baseImageAuth,
 		DiffTarGzReader: bytes.NewReader(gzData.Bytes()),
-		DiffTarLen:      int64(gzData.Len()),
+		DiffTarGzLen:    int64(gzData.Len()),
 		DiffTarSHA256:   diffTarSHA256,
 		DiffTarGzSHA256: diffTarGzSHA256,
 		TargetImage:     targetImage,
@@ -96,7 +96,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		Str("target_image", targetRepository).
 		Str("base_tag", baseTag).
 		Str("target_tag", targetTag).
-		Int64("diff_tar_gz_len", params.DiffTarLen).
+		Int64("diff_tar_gz_len", params.DiffTarGzLen).
 		Msg("Start image building process")
 
 	// Create centralized registry clients for token reuse, per registry
@@ -115,7 +115,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	}
 
 	// Use provided digests and size without decompressing or temp files
-	fileSize := params.DiffTarLen
+	fileSize := params.DiffTarGzLen
 	logger.Info().Str("phase", "build").Int("step", 1).Int64("compressed_size", fileSize).Msg("Using provided compressed layer size")
 
 	// Upload layer to target image registry using centralized client (streaming reader)

@@ -33,8 +33,8 @@ func main() {
 	}
 	logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
 
-	baseImage := "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13"
-	targetImage := "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512"
+	baseImage := os.Getenv("base_image")
+	targetImage := os.Getenv("target_image")
 
 	// Optional: separate credentials for base and target
 	baseUsername := os.Getenv("base_username")

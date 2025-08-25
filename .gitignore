@@ -35,3 +35,4 @@ compose.override.yaml
 p.md
 tmp
 layerize
+scripts/run.sh

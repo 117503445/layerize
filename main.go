@@ -57,6 +57,8 @@ func main() {
     }
 	content := goutils.TimeStrMilliSec()
 
+    targetImage := "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512"
+
     // Create file mapping to simulate content in tmp/diff.tar
 	files := map[string][]byte{
 		"new.txt":     []byte(content),
@@ -65,8 +67,8 @@ func main() {
     logger.Info().
         Str("phase", "build").
         Int("step", 0).
-        Str("target_image", "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:08182357").
-        Str("base_image", "registry.cn-hangzhou.aliyuncs.com/117503445/layerize-test-base:latest").
+        Str("target_image", targetImage).
+        Str("base_image", "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13").
         Msg("Ready to start image building")
 	for i := range 1 {
         logger.Info().Str("phase", "build").Int("step", 1).Int("test_case", i).Msg("Start executing image build and validation")
@@ -75,7 +77,7 @@ func main() {
         err = builder.BuildImageFromMap(
             ctx,
             files,
-            "registry.cn-hangzhou.aliyuncs.com/devs_test/devpod-e2e-test:20250825.033411.512", // target image (with tag)
+            targetImage, // target image (with tag)
             targetAuth,                                // target auth
             "serverless-registry.cn-hangzhou.cr.aliyuncs.com/functionai/python:3.13",    // base image (with tag)
             baseAuth,                                  // base image auth
@@ -88,7 +90,7 @@ func main() {
         logger.Info().Str("phase", "build").Int("step", 2).Int("test_case", i).Msg("Image building completed")
 
 		// Validate the built image
-		err = validator.ValidateBuiltImage(ctx, content)
+		err = validator.ValidateBuiltImage(ctx, targetImage, content)
 		if err != nil {
 			logger.Error().Err(err).Msg("Image validation failed")
 			panic(err)

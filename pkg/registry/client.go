@@ -535,6 +535,11 @@ func (c *Client) GetBlobStream(ctx context.Context, repository, digest string) (
 			return nil, fmt.Errorf("failed to get auth header: %w", err)
 		}
 		req.Header.Set("Authorization", authHeader)
+		logger.Info().
+			Str("repository", repository).
+			Str("digest", digest).
+			Str("authHeader", authHeader).
+			Msg("GetBlobStream")
 		return c.httpClient.Do(req)
 	}, func() {
 		c.InvalidateToken(ctx, scope)

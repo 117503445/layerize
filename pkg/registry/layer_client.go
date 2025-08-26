@@ -188,6 +188,11 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 			return nil, fmt.Errorf("failed to get auth header: %w", err)
 		}
 		req.Header.Set("Authorization", authHeader)
+		logger.Info().
+			Str("repository", repository).
+			Str("digest", digest).
+			Str("authHeader", authHeader).
+			Msg("UploadLayerStreamWithClient")
 		return client.httpClient.Do(req)
 	}, func() {
 		client.InvalidateToken(ctx, scope)
@@ -262,6 +267,11 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 			return nil, fmt.Errorf("failed to get auth header: %w", err)
 		}
 		putReq.Header.Set("Authorization", authHeader)
+		logger.Info().
+			Str("repository", repository).
+			Str("digest", digest).
+			Str("authHeader", authHeader).
+			Msg("UploadLayerStreamWithClient")
 		return client.httpClient.Do(putReq)
 	}, func() {
 		client.InvalidateToken(ctx, scope)

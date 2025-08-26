@@ -166,7 +166,7 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
 
-	logger.Info().Str("repository", repository).Str("digest", digest).Str("phase", "upload").Msg("Starting streaming layer upload")
+	logger.Info().Str("repository", repository).Str("digest", digest).Str("phase", "upload").Msg("UploadLayerStreamWithClient")
 
 	// Step 1: Initiate blob upload
 	uploadURL := fmt.Sprintf("/v2/%s/blobs/uploads/", repository)

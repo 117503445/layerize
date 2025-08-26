@@ -269,7 +269,7 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
             return err
         }
         // Upload to target streaming
-        if err := registry.UploadLayerStreamWithClient(ctx, targetClient, rc, digest, targetRepository); err != nil {
+        if err := targetClient.UploadLayerStreamWithClient(ctx, targetRepository, digest, rc); err != nil {
             rc.Close()
             logger.Error().Err(err).Str("digest", digest).Msg("Failed to stream blob to target")
             return err

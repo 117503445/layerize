@@ -79,7 +79,7 @@ func NewClient(registryURL, username, password string) *Client {
 		username:    username,
 		password:    password,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second, // Add timeout to prevent hanging requests
+			Timeout: 60 * time.Minute, // Add timeout to prevent hanging requests
 		},
 		tokenCache: make(map[string]*Token),
 	}

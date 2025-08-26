@@ -47,7 +47,7 @@ func UploadConfigWithClient(ctx context.Context, client *Client, configData []by
 	req.Header.Set("Authorization", authHeader)
 
 	retryConfig := DefaultRetryConfig()
-	resp, err := WithRetry(ctx, "config-upload-init", retryConfig, func() (*http.Response, error) {
+	resp, err := WithRetryAndTokenInvalidator(ctx, "config-upload-init", retryConfig, func() (*http.Response, error) {
 		// Refresh auth header for each attempt
 		authHeader, err := client.getAuthorizationHeader(ctx, scope)
 		if err != nil {
@@ -55,6 +55,8 @@ func UploadConfigWithClient(ctx context.Context, client *Client, configData []by
 		}
 		req.Header.Set("Authorization", authHeader)
 		return client.httpClient.Do(req)
+	}, func() {
+		client.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return fmt.Errorf("upload initiation request failed after retries: %w", err)
@@ -99,7 +101,7 @@ func UploadConfigWithClient(ctx context.Context, client *Client, configData []by
 	putReq.Header.Set("Content-Length", strconv.Itoa(len(configData)))
 	putReq.Header.Set("Authorization", authHeader)
 
-	putResp, err := WithRetry(ctx, "config-upload-put", retryConfig, func() (*http.Response, error) {
+	putResp, err := WithRetryAndTokenInvalidator(ctx, "config-upload-put", retryConfig, func() (*http.Response, error) {
 		// Refresh auth header for each attempt
 		authHeader, err := client.getAuthorizationHeader(ctx, scope)
 		if err != nil {
@@ -107,6 +109,8 @@ func UploadConfigWithClient(ctx context.Context, client *Client, configData []by
 		}
 		putReq.Header.Set("Authorization", authHeader)
 		return client.httpClient.Do(putReq)
+	}, func() {
+		client.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return fmt.Errorf("config upload request failed after retries: %w", err)
@@ -122,10 +126,6 @@ func UploadConfigWithClient(ctx context.Context, client *Client, configData []by
             Str("phase", "upload").
             Int("step", 2).
             Msg("Config upload failed")
-		// If we get 401, invalidate the token
-		if putResp.StatusCode == http.StatusUnauthorized {
-			client.InvalidateToken(ctx, scope)
-		}
 		return fmt.Errorf("config upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}
 

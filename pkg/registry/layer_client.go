@@ -60,7 +60,7 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 	req.Header.Set("Authorization", authHeader)
 
 	retryConfig := DefaultRetryConfig()
-	resp, err := WithRetry(ctx, "layer-upload-init", retryConfig, func() (*http.Response, error) {
+	resp, err := WithRetryAndTokenInvalidator(ctx, "layer-upload-init", retryConfig, func() (*http.Response, error) {
 		// Refresh auth header for each attempt
 		authHeader, err := client.getAuthorizationHeader(ctx, scope)
 		if err != nil {
@@ -68,6 +68,8 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 		}
 		req.Header.Set("Authorization", authHeader)
 		return client.httpClient.Do(req)
+	}, func() {
+		client.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return fmt.Errorf("upload initiation request failed after retries: %w", err)
@@ -110,9 +112,8 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 	}
 
 	putReq.Header.Set("Content-Type", "application/octet-stream")
-	putReq.Header.Set("Authorization", authHeader)
 
-	putResp, err := WithRetry(ctx, "layer-upload-put", retryConfig, func() (*http.Response, error) {
+	putResp, err := WithRetryAndTokenInvalidator(ctx, "layer-upload-put", retryConfig, func() (*http.Response, error) {
 		// Refresh auth header for each attempt
 		authHeader, err := client.getAuthorizationHeader(ctx, scope)
 		if err != nil {
@@ -120,6 +121,8 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 		}
 		putReq.Header.Set("Authorization", authHeader)
 		return client.httpClient.Do(putReq)
+	}, func() {
+		client.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return fmt.Errorf("layer upload request failed after retries: %w", err)
@@ -179,13 +182,15 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 	req.Header.Set("Authorization", authHeader)
 
 	retryConfig := DefaultRetryConfig()
-	resp, err := WithRetry(ctx, "layer-upload-init", retryConfig, func() (*http.Response, error) {
+	resp, err := WithRetryAndTokenInvalidator(ctx, "layer-upload-init", retryConfig, func() (*http.Response, error) {
 		authHeader, err := client.getAuthorizationHeader(ctx, scope)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get auth header: %w", err)
 		}
 		req.Header.Set("Authorization", authHeader)
 		return client.httpClient.Do(req)
+	}, func() {
+		client.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return fmt.Errorf("upload initiation request failed after retries: %w", err)
@@ -250,15 +255,16 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 		return fmt.Errorf("failed to create layer upload request: %w", err)
 	}
 	putReq.Header.Set("Content-Type", "application/octet-stream")
-	putReq.Header.Set("Authorization", authHeader)
 
-	putResp, err := WithRetry(ctx, "layer-upload-put", retryConfig, func() (*http.Response, error) {
+	putResp, err := WithRetryAndTokenInvalidator(ctx, "layer-upload-put", retryConfig, func() (*http.Response, error) {
 		authHeader, err := client.getAuthorizationHeader(ctx, scope)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get auth header: %w", err)
 		}
 		putReq.Header.Set("Authorization", authHeader)
 		return client.httpClient.Do(putReq)
+	}, func() {
+		client.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return fmt.Errorf("layer upload request failed after retries: %w", err)

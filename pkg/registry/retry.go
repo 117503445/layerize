@@ -25,6 +25,11 @@ func DefaultRetryConfig() RetryConfig {
 
 // WithRetry executes a function with retry logic for authentication failures
 func WithRetry(ctx context.Context, operation string, config RetryConfig, fn func() (*http.Response, error)) (*http.Response, error) {
+	return WithRetryAndTokenInvalidator(ctx, operation, config, fn, nil)
+}
+
+// WithRetryAndTokenInvalidator executes a function with retry logic and token invalidation callback
+func WithRetryAndTokenInvalidator(ctx context.Context, operation string, config RetryConfig, fn func() (*http.Response, error), invalidateToken func()) (*http.Response, error) {
 	logger := log.Ctx(ctx)
 	var lastErr error
 	
@@ -68,6 +73,13 @@ func WithRetry(ctx context.Context, operation string, config RetryConfig, fn fun
 			if resp.Body != nil {
 				resp.Body.Close()
 			}
+			
+			// Invalidate token if callback is provided
+			if invalidateToken != nil {
+				invalidateToken()
+				logger.Info().Str("operation", operation).Int("attempt", attempt).Str("phase", "retry").Msg("Token invalidated due to 401 error")
+			}
+			
 			lastErr = fmt.Errorf("authentication failed: %s", resp.Status)
                     logger.Warn().
 			Int("status_code", resp.StatusCode).

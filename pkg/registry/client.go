@@ -528,7 +528,7 @@ func (c *Client) GetBlobStream(ctx context.Context, repository, digest string) (
 	req.Header.Set("Authorization", authHeader)
 
 	retryConfig := DefaultRetryConfig()
-	resp, err := WithRetry(ctx, "blob-get-stream", retryConfig, func() (*http.Response, error) {
+	resp, err := WithRetryAndTokenInvalidator(ctx, "blob-get-stream", retryConfig, func() (*http.Response, error) {
 		// Refresh auth header for each attempt
 		authHeader, err := c.getAuthorizationHeader(ctx, scope)
 		if err != nil {
@@ -536,6 +536,8 @@ func (c *Client) GetBlobStream(ctx context.Context, repository, digest string) (
 		}
 		req.Header.Set("Authorization", authHeader)
 		return c.httpClient.Do(req)
+	}, func() {
+		c.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get blob stream after retries: %w", err)

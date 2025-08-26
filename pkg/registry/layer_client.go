@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -13,41 +14,40 @@ import (
 
 // ProgressReader wraps an io.Reader and tracks the number of bytes read
 type ProgressReader struct {
-	Reader      io.Reader
-	BytesRead   int64
-	OnProgress  func(bytesRead int64)
+	Reader     io.Reader
+	BytesRead  int64
+	OnProgress func(bytesRead int64)
 }
 
 // Read implements the io.Reader interface
 func (pr *ProgressReader) Read(p []byte) (int, error) {
 	n, err := pr.Reader.Read(p)
 	pr.BytesRead += int64(n)
-	
+
 	// Call the progress callback if provided
 	if pr.OnProgress != nil {
 		pr.OnProgress(pr.BytesRead)
 	}
-	
+
 	return n, err
 }
-
 
 // UploadLayerWithClient uploads layer using the centralized client with token management
 func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader, sha256sum, repository string) error {
 	logger := log.Ctx(ctx)
 	scope := fmt.Sprintf("repository:%s:push,pull", repository)
-	
-    logger.Info().
+
+	logger.Info().
 		Str("repository", repository).
 		Str("scope", scope).
 		Str("layer_sha256", sha256sum).
-        Str("phase", "upload").
-        Int("step", 0).
-        Msg("Starting layer upload with centralized client")
+		Str("phase", "upload").
+		Int("step", 0).
+		Msg("Starting layer upload with centralized client")
 
 	// Step 1: Initiate blob upload
 	uploadURL := fmt.Sprintf("/v2/%s/blobs/uploads/", repository)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", client.registryURL+uploadURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create upload initiation request: %w", err)
@@ -84,7 +84,7 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 		return fmt.Errorf("failed to get Location header from upload initiation")
 	}
 
-    logger.Debug().Str("upload_location", location).Str("phase", "upload").Int("step", 1).Msg("Layer upload initiated successfully")
+	logger.Debug().Str("upload_location", location).Str("phase", "upload").Int("step", 1).Msg("Layer upload initiated successfully")
 
 	// Step 2: Upload the layer data
 	var finalUploadURL string
@@ -102,7 +102,7 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 		finalUploadURL += "?digest=" + digest
 	}
 
-    logger.Debug().Str("final_upload_url", finalUploadURL).Str("phase", "upload").Int("step", 2).Msg("Uploading layer data")
+	logger.Debug().Str("final_upload_url", finalUploadURL).Str("phase", "upload").Int("step", 2).Msg("Uploading layer data")
 
 	putReq, err := http.NewRequestWithContext(ctx, "PUT", finalUploadURL, reader)
 	if err != nil {
@@ -128,13 +128,13 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 
 	if putResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(putResp.Body)
-        logger.Error().
+		logger.Error().
 			Int("status_code", putResp.StatusCode).
 			Str("response_body", string(body)).
 			Str("upload_url", finalUploadURL).
-            Str("phase", "upload").
-            Int("step", 2).
-            Msg("Layer upload failed")
+			Str("phase", "upload").
+			Int("step", 2).
+			Msg("Layer upload failed")
 		// If we get 401, invalidate the token
 		if putResp.StatusCode == http.StatusUnauthorized {
 			client.InvalidateToken(ctx, scope)
@@ -142,12 +142,12 @@ func UploadLayerWithClient(ctx context.Context, client *Client, reader io.Reader
 		return fmt.Errorf("layer upload failed, status code: %d, response: %s", putResp.StatusCode, string(body))
 	}
 
-    logger.Info().
+	logger.Info().
 		Str("repository", repository).
 		Str("digest", digest).
-        Str("phase", "upload").
-        Int("step", 3).
-        Msg("Layer upload successful using centralized client")
+		Str("phase", "upload").
+		Int("step", 3).
+		Msg("Layer upload successful using centralized client")
 	return nil
 }
 
@@ -219,7 +219,7 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 	progressReader := &ProgressReader{
 		Reader: reader,
 		OnProgress: func(bytesRead int64) {
-			logger.Debug().Int64("bytes_uploaded", bytesRead).Str("repository", repository).Str("digest", digest).Msg("Layer upload progress")
+			// logger.Debug().Int64("bytes_uploaded", bytesRead).Str("repository", repository).Str("digest", digest).Msg("Layer upload progress")
 		},
 	}
 
@@ -233,7 +233,13 @@ func (client *Client) UploadLayerStreamWithClient(ctx context.Context, repositor
 			case <-ctx.Done():
 				return
 			case <-progressTicker.C:
-				logger.Info().Int64("bytes_uploaded", progressReader.BytesRead).Str("repository", repository).Str("digest", digest).Msg("Layer upload in progress")
+				mb := float64(progressReader.BytesRead) / 1024 / 1024
+				logger.Info().
+					Int64("bytes_uploaded", progressReader.BytesRead).
+					Float64("bytes_uploaded_MB", math.Round(mb*100)/100).
+					Str("repository", repository).
+					Str("digest", digest).
+					Msg("Layer upload in progress")
 			}
 		}
 	}()

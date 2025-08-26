@@ -224,12 +224,66 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	logger.Info().Str("phase", "build").Int("step", 7).Int("updatedManifestSize", len(updatedManifest)).Msg("Updated manifest, pointing to new config and layer")
 	logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
-	// Upload the updated manifest to the target registry using existing client
-	// Use the detected mediaType as Content-Type for correctness
-	if mediaType != "" {
-		contentType = mediaType
-	}
-	err = targetClient.UploadManifest(ctx, targetRepository, targetTag, updatedManifest, contentType)
+    // Before uploading manifest, ensure all referenced blobs exist in target registry.
+    // If not, stream-copy them from the base registry to the target registry.
+    var manifestMap map[string]any
+    if err := json.Unmarshal(updatedManifest, &manifestMap); err != nil {
+        logger.Error().Err(err).Msg("Failed to parse updated manifest for blob sync")
+        return err
+    }
+
+    // Prepare a list of layer digests to verify
+    var digestsToEnsure []string
+    // Include config digest
+    if cfg, ok := manifestMap["config"].(map[string]any); ok {
+        if d, ok := cfg["digest"].(string); ok && d != "" {
+            digestsToEnsure = append(digestsToEnsure, d)
+        }
+    }
+    // Include layer digests
+    if layers, ok := manifestMap["layers"].([]any); ok {
+        for _, l := range layers {
+            if lm, ok := l.(map[string]any); ok {
+                if d, ok := lm["digest"].(string); ok && d != "" {
+                    digestsToEnsure = append(digestsToEnsure, d)
+                }
+            }
+        }
+    }
+
+    // For each digest, check existence in target, and stream from base if missing
+    for _, digest := range digestsToEnsure {
+        exists, err := targetClient.BlobExists(ctx, targetRepository, digest)
+        if err != nil {
+            logger.Error().Err(err).Str("digest", digest).Msg("Failed to check blob existence in target")
+            return err
+        }
+        if exists {
+            continue
+        }
+        logger.Info().Str("digest", digest).Str("repository", targetRepository).Msg("Blob missing in target; streaming from source")
+        // Stream from base
+        rc, err := baseClient.GetBlobStream(ctx, baseRepository, digest)
+        if err != nil {
+            logger.Error().Err(err).Str("digest", digest).Msg("Failed to open blob stream from source")
+            return err
+        }
+        // Upload to target streaming
+        if err := registry.UploadLayerStreamWithClient(ctx, targetClient, rc, digest, targetRepository); err != nil {
+            rc.Close()
+            logger.Error().Err(err).Str("digest", digest).Msg("Failed to stream blob to target")
+            return err
+        }
+        rc.Close()
+        logger.Info().Str("digest", digest).Msg("Blob streamed to target successfully")
+    }
+
+    // Upload the updated manifest to the target registry using existing client
+    // Use the detected mediaType as Content-Type for correctness
+    if mediaType != "" {
+        contentType = mediaType
+    }
+    err = targetClient.UploadManifest(ctx, targetRepository, targetTag, updatedManifest, contentType)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to upload updated manifest")
 		return err

@@ -437,3 +437,102 @@ func (c *Client) GetBlob(ctx context.Context, repository, digest string) ([]byte
 	}
 	return body, nil
 }
+
+// BlobExists checks if a blob exists in the target repository using a HEAD request
+// Parameters:
+// - ctx: context for the operation
+// - repository: repository name
+// - digest: blob digest like sha256:...
+// Returns true if exists, false if 404, or error for other cases
+func (c *Client) BlobExists(ctx context.Context, repository, digest string) (bool, error) {
+    endpoint := fmt.Sprintf("/v2/%s/blobs/%s", repository, digest)
+    scope := fmt.Sprintf("repository:%s:pull", repository)
+
+    req, err := http.NewRequestWithContext(ctx, "HEAD", c.registryURL+endpoint, nil)
+    if err != nil {
+        return false, fmt.Errorf("failed to create blob HEAD request: %w", err)
+    }
+
+    authHeader, err := c.getAuthorizationHeader(ctx, scope)
+    if err != nil {
+        return false, fmt.Errorf("failed to get auth header: %w", err)
+    }
+    req.Header.Set("Authorization", authHeader)
+
+    retryConfig := DefaultRetryConfig()
+    resp, err := WithRetry(ctx, "blob-head", retryConfig, func() (*http.Response, error) {
+        // Refresh auth header for each attempt
+        authHeader, err := c.getAuthorizationHeader(ctx, scope)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get auth header: %w", err)
+        }
+        req.Header.Set("Authorization", authHeader)
+        return c.httpClient.Do(req)
+    })
+    if err != nil {
+        return false, fmt.Errorf("failed to head blob after retries: %w", err)
+    }
+    defer resp.Body.Close()
+
+    switch resp.StatusCode {
+    case http.StatusOK:
+        return true, nil
+    case http.StatusNotFound:
+        return false, nil
+    case http.StatusUnauthorized:
+        c.InvalidateToken(ctx, scope)
+        body, _ := io.ReadAll(resp.Body)
+        return false, fmt.Errorf("unauthorized when checking blob: %s", string(body))
+    default:
+        body, _ := io.ReadAll(resp.Body)
+        return false, fmt.Errorf("unexpected status on blob HEAD: %d, response: %s", resp.StatusCode, string(body))
+    }
+}
+
+// GetBlobStream retrieves a blob as a streaming reader. Caller must Close the reader.
+// Parameters:
+// - ctx: context for the operation
+// - repository: repository name
+// - digest: blob digest like sha256:...
+// Returns an io.ReadCloser for streaming the blob content
+func (c *Client) GetBlobStream(ctx context.Context, repository, digest string) (io.ReadCloser, error) {
+    endpoint := fmt.Sprintf("/v2/%s/blobs/%s", repository, digest)
+    scope := fmt.Sprintf("repository:%s:pull", repository)
+
+    req, err := http.NewRequestWithContext(ctx, "GET", c.registryURL+endpoint, nil)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create blob GET request: %w", err)
+    }
+
+    authHeader, err := c.getAuthorizationHeader(ctx, scope)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get auth header: %w", err)
+    }
+    req.Header.Set("Authorization", authHeader)
+
+    retryConfig := DefaultRetryConfig()
+    resp, err := WithRetry(ctx, "blob-get-stream", retryConfig, func() (*http.Response, error) {
+        // Refresh auth header for each attempt
+        authHeader, err := c.getAuthorizationHeader(ctx, scope)
+        if err != nil {
+            return nil, fmt.Errorf("failed to get auth header: %w", err)
+        }
+        req.Header.Set("Authorization", authHeader)
+        return c.httpClient.Do(req)
+    })
+    if err != nil {
+        return nil, fmt.Errorf("failed to get blob stream after retries: %w", err)
+    }
+
+    if resp.StatusCode != http.StatusOK {
+        defer resp.Body.Close()
+        body, _ := io.ReadAll(resp.Body)
+        if resp.StatusCode == http.StatusUnauthorized {
+            c.InvalidateToken(ctx, scope)
+        }
+        return nil, fmt.Errorf("failed to get blob stream, status code: %d, response: %s", resp.StatusCode, string(body))
+    }
+
+    // Caller must Close()
+    return resp.Body, nil
+}

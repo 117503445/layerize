@@ -227,33 +227,6 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 	logger.Info().Str("phase", "build").Int("step", 7).Int("updatedManifestSize", len(updatedManifest)).Msg("Updated manifest, pointing to new config and layer")
 	logger.Debug().RawJSON("updatedManifest", updatedManifest).Msg("Updated manifest content")
 
-	// Before uploading manifest, ensure all referenced blobs exist in target registry.
-	// If not, stream-copy them from the base registry to the target registry.
-	var manifestMap map[string]any
-	if err := json.Unmarshal(updatedManifest, &manifestMap); err != nil {
-		logger.Error().Err(err).Msg("Failed to parse updated manifest for blob sync")
-		return err
-	}
-
-	// Prepare a list of layer digests to verify
-	var digestsToEnsure []string
-	// Include config digest
-	if cfg, ok := manifestMap["config"].(map[string]any); ok {
-		if d, ok := cfg["digest"].(string); ok && d != "" {
-			digestsToEnsure = append(digestsToEnsure, d)
-		}
-	}
-	// Include layer digests
-	if layers, ok := manifestMap["layers"].([]any); ok {
-		for _, l := range layers {
-			if lm, ok := l.(map[string]any); ok {
-				if d, ok := lm["digest"].(string); ok && d != "" {
-					digestsToEnsure = append(digestsToEnsure, d)
-				}
-			}
-		}
-	}
-
 	// Upload the updated manifest to the target registry using existing client
 	// Use the detected mediaType as Content-Type for correctness
 	if mediaType != "" {
@@ -340,11 +313,11 @@ func defaultRegistryURL() string {
 
 // SyncBlobs ensures all referenced blobs exist in target registry.
 // If not, stream-copy them from the base registry to the target registry.
-func SyncBlobs(ctx context.Context, syncParams types.SyncBlobsParams, digestsToEnsure []string) error {
+func SyncBlobs(ctx context.Context, syncParams types.SyncBlobsParams) error {
 	logger := log.Ctx(ctx)
 
 	// Parse image references, extracting registry URL, repository, and tag
-	baseRegistryURL, baseRepository, _ := parseImageReference(syncParams.BaseImage)
+	baseRegistryURL, baseRepository, baseTag := parseImageReference(syncParams.BaseImage)
 	targetRegistryURL, targetRepository, _ := parseImageReference(syncParams.TargetImage)
 
 	// Create centralized registry clients for token reuse, per registry
@@ -355,6 +328,39 @@ func SyncBlobs(ctx context.Context, syncParams types.SyncBlobsParams, digestsToE
 		syncParams.BaseImageAuth.Username != syncParams.TargetAuth.Username ||
 		syncParams.BaseImageAuth.Password != syncParams.TargetAuth.Password {
 		baseClient = registry.NewClient(baseRegistryURL, syncParams.BaseImageAuth.Username, syncParams.BaseImageAuth.Password)
+	}
+
+	// Get base image manifest
+	manifestData, _, err := baseClient.GetManifest(ctx, baseRepository, baseTag)
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to get base manifest")
+		return err
+	}
+
+	// Parse manifest to get blob digests
+	var manifestMap map[string]any
+	if err := json.Unmarshal(manifestData, &manifestMap); err != nil {
+		logger.Error().Err(err).Msg("Failed to parse manifest")
+		return err
+	}
+
+	// Prepare a list of layer digests to verify
+	var digestsToEnsure []string
+	// Include config digest
+	if cfg, ok := manifestMap["config"].(map[string]any); ok {
+		if d, ok := cfg["digest"].(string); ok && d != "" {
+			digestsToEnsure = append(digestsToEnsure, d)
+		}
+	}
+	// Include layer digests
+	if layers, ok := manifestMap["layers"].([]any); ok {
+		for _, l := range layers {
+			if lm, ok := l.(map[string]any); ok {
+				if d, ok := lm["digest"].(string); ok && d != "" {
+					digestsToEnsure = append(digestsToEnsure, d)
+				}
+			}
+		}
 	}
 
 	// For each digest, check existence in target, and stream from base if missing

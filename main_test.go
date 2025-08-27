@@ -89,3 +89,61 @@ func TestBuildAndValidateImage(t *testing.T) {
 	err = validator.ValidateBuiltImage(ctx, targetImage, content)
 	assert.NoError(t, err, "Image validation failed")
 }
+
+// TestSyncBlobs tests the blob synchronization functionality
+func TestSyncBlobs(t *testing.T) {
+	fileEnv := ".env"
+
+	// Skip test if .env file is not present
+	if _, err := os.Stat(fileEnv); os.IsNotExist(err) {
+		t.Skip(".env file not found, skipping integration test")
+	}
+
+	ctx := context.Background()
+	ctx = log.Logger.WithContext(ctx)
+
+	logger := log.Ctx(ctx)
+
+	logger.Info().
+		Str("phase", "init").
+		Int("step", 0).
+		Msg("Starting SyncBlobs test")
+
+	// Load .env file
+	err := godotenv.Load(fileEnv)
+	require.NoError(t, err, "Failed to load .env file")
+	logger.Info().Str("phase", "init").Int("step", 1).Msg("Loaded .env environment variables")
+
+	baseImage := os.Getenv("base_image")
+	targetImage := os.Getenv("target_image")
+
+	// Check if required environment variables are set
+	if baseImage == "" || targetImage == "" {
+		t.Skip("base_image or target_image not set, skipping integration test")
+	}
+
+	// Optional: separate credentials for base and target
+	baseUsername := os.Getenv("base_username")
+	basePassword := os.Getenv("base_password")
+	targetUsername := os.Getenv("target_username")
+	targetPassword := os.Getenv("target_password")
+
+	syncParams := types.SyncBlobsParams{
+		BaseImage: baseImage,
+		BaseImageAuth: types.Auth{
+			Username: baseUsername,
+			Password: basePassword,
+		},
+		TargetImage: targetImage,
+		TargetAuth: types.Auth{
+			Username: targetUsername,
+			Password: targetPassword,
+		},
+	}
+
+	// Call SyncBlobs function to execute blob synchronization
+	err = builder.SyncBlobs(ctx, syncParams)
+	require.NoError(t, err, "SyncBlobs execution failed")
+
+	logger.Info().Msg("SyncBlobs test completed successfully")
+}

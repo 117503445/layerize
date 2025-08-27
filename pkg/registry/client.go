@@ -467,7 +467,7 @@ func (c *Client) BlobExists(ctx context.Context, repository, digest string) (boo
 	req.Header.Set("Authorization", authHeader)
 
 	retryConfig := DefaultRetryConfig()
-	resp, err := WithRetry(ctx, "blob-head", retryConfig, func() (*http.Response, error) {
+	resp, err := WithRetryAndTokenInvalidator(ctx, "blob-head", retryConfig, func() (*http.Response, error) {
 		// Refresh auth header for each attempt
 		authHeader, err := c.getAuthorizationHeader(ctx, scope)
 		if err != nil {
@@ -475,12 +475,10 @@ func (c *Client) BlobExists(ctx context.Context, repository, digest string) (boo
 		}
 		req.Header.Set("Authorization", authHeader)
 		return c.httpClient.Do(req)
+	}, func() {
+		c.InvalidateToken(ctx, scope)
 	})
 	if err != nil {
-		// If we have authentication error, invalidate the token and return
-		if strings.Contains(err.Error(), "authentication failed") {
-			c.InvalidateToken(ctx, scope)
-		}
 		return false, fmt.Errorf("failed to head blob after retries: %w", err)
 	}
 	defer resp.Body.Close()

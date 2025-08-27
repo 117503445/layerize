@@ -76,6 +76,9 @@ func BuildImageFromMap(ctx context.Context, files map[string][]byte, targetImage
 }
 
 // BuildImage encapsulates the complete image building process
+// Note: Before calling this function, you should call SyncBlobs to ensure all blobs
+// referenced in the manifest exist in the target registry. This step is critical
+// for the manifest upload to succeed.
 // Parameters:
 // - ctx: context for the operation
 // - params: BuildImageParams struct containing all parameters needed to build the image
@@ -251,38 +254,6 @@ func BuildImage(ctx context.Context, params types.BuildImageParams) error {
 		}
 	}
 
-	// For each digest, check existence in target, and stream from base if missing
-	for _, digest := range digestsToEnsure {
-		logger.Info().
-			Str("digest", digest).
-			Msg("Ensuring layer exists")
-
-		exists, err := targetClient.BlobExists(ctx, targetRepository, digest)
-		if err != nil {
-			logger.Error().Err(err).Str("digest", digest).Msg("Failed to check blob existence in target")
-			return err
-		}
-		if exists {
-			continue
-		}
-		logger.Info().Str("digest", digest).Str("repository", targetRepository).Msg("Blob missing in target; streaming from source")
-		// Stream from base
-		rc, err := baseClient.GetBlobStream(ctx, baseRepository, digest)
-		if err != nil {
-			logger.Error().Err(err).Str("digest", digest).Msg("Failed to open blob stream from source")
-			return err
-		}
-		logger.Info().Msg("success get blob stream from source")
-		// Upload to target streaming
-		if err := targetClient.UploadLayerStreamWithClient(ctx, targetRepository, digest, rc); err != nil {
-			rc.Close()
-			logger.Error().Err(err).Str("digest", digest).Msg("Failed to stream blob to target")
-			return err
-		}
-		rc.Close()
-		logger.Info().Str("digest", digest).Msg("Blob streamed to target successfully")
-	}
-
 	// Upload the updated manifest to the target registry using existing client
 	// Use the detected mediaType as Content-Type for correctness
 	if mediaType != "" {
@@ -365,4 +336,44 @@ func looksLikeRegistryHost(s string) bool {
 func defaultRegistryURL() string {
 	// Default to Docker Hub registry
 	return "https://registry-1.docker.io"
+}
+
+// SyncBlobs ensures all referenced blobs exist in target registry.
+// If not, stream-copy them from the base registry to the target registry.
+func SyncBlobs(ctx context.Context, syncParams types.SyncBlobsParams, baseClient, targetClient *registry.Client, baseRepository, targetRepository string, digestsToEnsure []string) error {
+	logger := log.Ctx(ctx)
+
+	// For each digest, check existence in target, and stream from base if missing
+	for _, digest := range digestsToEnsure {
+		logger.Info().
+			Str("digest", digest).
+			Msg("Ensuring layer exists")
+
+		exists, err := targetClient.BlobExists(ctx, targetRepository, digest)
+		if err != nil {
+			logger.Error().Err(err).Str("digest", digest).Msg("Failed to check blob existence in target")
+			return err
+		}
+		if exists {
+			continue
+		}
+		logger.Info().Str("digest", digest).Str("repository", targetRepository).Msg("Blob missing in target; streaming from source")
+		// Stream from base
+		rc, err := baseClient.GetBlobStream(ctx, baseRepository, digest)
+		if err != nil {
+			logger.Error().Err(err).Str("digest", digest).Msg("Failed to open blob stream from source")
+			return err
+		}
+		logger.Info().Msg("success get blob stream from source")
+		// Upload to target streaming
+		if err := targetClient.UploadLayerStreamWithClient(ctx, targetRepository, digest, rc); err != nil {
+			rc.Close()
+			logger.Error().Err(err).Str("digest", digest).Msg("Failed to stream blob to target")
+			return err
+		}
+		rc.Close()
+		logger.Info().Str("digest", digest).Msg("Blob streamed to target successfully")
+	}
+
+	return nil
 }

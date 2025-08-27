@@ -28,3 +28,13 @@ type BuildImageParams struct {
     TargetImage     string
     TargetAuth      Auth
 }
+
+// SyncBlobsParams stores parameters for SyncBlobs function
+type SyncBlobsParams struct {
+	// BaseImage is the base image reference (e.g., "namespace/repo:tag")
+	BaseImage     string
+	BaseImageAuth Auth
+	// TargetImage is the target image reference (e.g., "namespace/repo:tag")
+	TargetImage   string
+	TargetAuth    Auth
+}

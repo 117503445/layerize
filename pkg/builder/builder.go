@@ -340,8 +340,22 @@ func defaultRegistryURL() string {
 
 // SyncBlobs ensures all referenced blobs exist in target registry.
 // If not, stream-copy them from the base registry to the target registry.
-func SyncBlobs(ctx context.Context, syncParams types.SyncBlobsParams, baseClient, targetClient *registry.Client, baseRepository, targetRepository string, digestsToEnsure []string) error {
+func SyncBlobs(ctx context.Context, syncParams types.SyncBlobsParams, digestsToEnsure []string) error {
 	logger := log.Ctx(ctx)
+
+	// Parse image references, extracting registry URL, repository, and tag
+	baseRegistryURL, baseRepository, _ := parseImageReference(syncParams.BaseImage)
+	targetRegistryURL, targetRepository, _ := parseImageReference(syncParams.TargetImage)
+
+	// Create centralized registry clients for token reuse, per registry
+	targetClient := registry.NewClient(targetRegistryURL, syncParams.TargetAuth.Username, syncParams.TargetAuth.Password)
+	// Reuse client only if registry and credentials are identical
+	baseClient := targetClient
+	if baseRegistryURL != targetRegistryURL ||
+		syncParams.BaseImageAuth.Username != syncParams.TargetAuth.Username ||
+		syncParams.BaseImageAuth.Password != syncParams.TargetAuth.Password {
+		baseClient = registry.NewClient(baseRegistryURL, syncParams.BaseImageAuth.Username, syncParams.BaseImageAuth.Password)
+	}
 
 	// For each digest, check existence in target, and stream from base if missing
 	for _, digest := range digestsToEnsure {
